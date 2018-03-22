@@ -105,12 +105,12 @@ pub struct OwnedBuffer<T> {
 	backing: Vec<T>,
 	position: usize
 }
-impl<'a, T> MutableBackedBuffer<'a, T> {
-	pub fn new(size: usize) -> Self {
-		MutableBackedBuffer{ backing: vec![0u8; size], position: 0 }
+impl<T> OwnedBuffer<T> {
+	pub fn new(size: usize) -> Self where T: Default + Clone {
+		OwnedBuffer{ backing: vec![T::default(); size], position: 0 }
 	}
 }
-impl<'a, T> ReadableBuffer<T> for MutableBackedBuffer<'a, T> {
+impl<T> ReadableBuffer<T> for OwnedBuffer<T> {
 	fn backing(&self) -> &[T] {
 		&self.backing
 	}
@@ -121,7 +121,7 @@ impl<'a, T> ReadableBuffer<T> for MutableBackedBuffer<'a, T> {
 		&mut self.position
 	}
 }
-impl<'a, T> WriteableBuffer<T> for MutableBackedBuffer<'a, T> {
+impl<T> WriteableBuffer<T> for OwnedBuffer<T> {
 	fn backing_mut(&mut self) -> &mut[T] {
 		&mut self.backing
 	}

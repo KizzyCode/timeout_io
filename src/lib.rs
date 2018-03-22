@@ -12,7 +12,7 @@ pub use reader::Reader;
 pub use writer::Writer;
 pub use acceptor::Acceptor;
 pub use resolver::{ DnsResolvable, IpParseable };
-pub use buffer::{ ReadableBuffer, WriteableBuffer, BackedBuffer, MutableBackedBuffer };
+pub use buffer::{ ReadableBuffer, WriteableBuffer, BackedBuffer, MutableBackedBuffer, OwnedBuffer };
 
 
 #[derive(Debug, Clone)]
