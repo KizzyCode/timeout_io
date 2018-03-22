@@ -131,3 +131,8 @@ impl<T> From<Vec<T>> for OwnedBuffer<T> {
 		OwnedBuffer{ backing: vector, position: 0 }
 	}
 }
+impl<T> Into<Vec<T>> for OwnedBuffer<T> {
+	fn into(self) -> Vec<T> {
+		self.backing
+	}
+}
