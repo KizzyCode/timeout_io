@@ -2,7 +2,7 @@ use std;
 use std::io::Read;
 
 use super::etrace::Error;
-use super::{ libselect, time_remaining, IoError, WriteableBuffer, MutableBackedBuffer, OwnedBuffer };
+use super::{ libselect, time_remaining, IoError, ReadableBuffer, WriteableBuffer, OwnedBuffer };
 
 
 
