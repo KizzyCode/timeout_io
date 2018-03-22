@@ -4,12 +4,6 @@ version = "0.1.2"
 authors = ["KizzyCode <development@kizzycode.de>"]
 build = "build.rs"
 
-[lib]
-name = "io"
-path = "src/lib.rs"
-doc = true
-
-
 [dependencies]
 etrace = { git = "https://github.com/KizzyCode/etrace" }
 future = { git = "https://github.com/KizzyCode/future" }
