@@ -45,7 +45,7 @@ impl<T> Writer for T where T: Write + libselect::ToRawFd {
 			match std::io::Write::write(self, buffer.remaining()) {
 				// Successful write
 				Ok(bytes_written) => {
-					*buffer.pos() += bytes_written;
+					*buffer.pos_mut() += bytes_written;
 					return Ok(())
 				},
 				// An error occurred
@@ -69,7 +69,7 @@ impl<T> Writer for T where T: Write + libselect::ToRawFd {
 			// Write data
 			match std::io::Write::write(self, buffer.remaining()) {
 				// (Partial-)write
-				Ok(bytes_written) => *buffer.pos() += bytes_written,
+				Ok(bytes_written) => *buffer.pos_mut() += bytes_written,
 				// An error occurred
 				Err(error) => {
 					let error = IoError::from(error);

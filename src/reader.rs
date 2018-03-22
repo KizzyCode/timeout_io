@@ -53,10 +53,10 @@ impl<T> Reader for T where T: Read + libselect::ToRawFd {
 		
 		// Read data
 		loop {
-			match std::io::Read::read(self, buffer.remaining()) {
+			match std::io::Read::read(self, buffer.remaining_mut()) {
 				// Successful read
 				Ok(bytes_read) => {
-					*buffer.pos() += bytes_read;
+					*buffer.pos_mut() += bytes_read;
 					return Ok(())
 				},
 				// An error occurred
@@ -78,9 +78,9 @@ impl<T> Reader for T where T: Read + libselect::ToRawFd {
 			if !try_err!(libselect::event_read(self, time_remaining(timeout_point))) { throw_err!(std::io::ErrorKind::TimedOut.into()) }
 			
 			// Read data
-			match std::io::Read::read(self, buffer.remaining()) {
+			match std::io::Read::read(self, buffer.remaining_mut()) {
 				// (Partial-)read
-				Ok(bytes_read) => *buffer.pos() += bytes_read,
+				Ok(bytes_read) => *buffer.pos_mut() += bytes_read,
 				// An error occurred
 				Err(error) => {
 					let error = IoError::from(error);
@@ -102,7 +102,7 @@ impl<T> Reader for T where T: Read + libselect::ToRawFd {
 		while !buffer.remaining().is_empty() {
 			// Read next byte
 			{
-				let mut sub_buffer = MutableBackedBuffer::new(&mut buffer.remaining()[.. 1]);
+				let mut sub_buffer = MutableBackedBuffer::new(&mut buffer.remaining_mut()[.. 1]);
 				try_err!(Reader::read_exact(self, &mut sub_buffer, time_remaining(timeout_point)));
 			}
 			// Check for pattern

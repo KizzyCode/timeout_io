@@ -1,6 +1,6 @@
 [package]
 name = "io"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["KizzyCode <development@kizzycode.de>"]
 build = "build.rs"
 

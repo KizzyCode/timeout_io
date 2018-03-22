@@ -1,29 +1,51 @@
 pub trait ReadableBuffer<T> {
+	/// Returns the backing
+	fn backing(&self) -> &[T];
+	
+	/// Returns the buffer's position
+	fn pos(&self) -> usize;
+	
 	/// Returns a mutable reference to the buffer's position
-	fn pos(&mut self) -> &mut usize;
+	fn pos_mut(&mut self) -> &mut usize;
 	
 	/// Returns the processed subslice (`&slice[.. *self.pos()]`)
-	fn processed(&self) -> &[T];
+	fn processed(&self) -> &[T] {
+		&self.backing()[.. self.pos()]
+	}
 	
 	/// Returns the remaining subslice (`&slice[*self.pos() ..]`)
-	fn remaining(&self) -> &[T];
+	fn remaining(&self) -> &[T] {
+		&self.backing()[self.pos() ..]
+	}
 	
 	/// Reads `len`-bytes from the remaining subslice and increments the position accordingly
-	fn read(&mut self, len: usize) -> &[T];
+	fn read(&mut self, len: usize) -> &[T] {
+		*self.pos_mut() += len;
+		&self.remaining()[.. len]
+	}
 }
 
-pub trait WriteableBuffer<T> {
-	/// Returns a mutable reference to the buffer's position
-	fn pos(&mut self) -> &mut usize;
+pub trait WriteableBuffer<T>: ReadableBuffer<T> {
+	/// Returns the mutable backing
+	fn backing_mut(&mut self) -> &mut[T];
 	
 	/// Returns the processed subslice (`&slice[.. *self.pos()]`)
-	fn processed(&mut self) -> &mut [T];
+	fn processed_mut(&mut self) -> &mut [T] {
+		let pos = self.pos();
+		&mut self.backing_mut()[.. pos]
+	}
 	
 	/// Returns the remaining subslice (`&slice[*self.pos() ..]`)
-	fn remaining(&mut self) -> &mut [T];
+	fn remaining_mut(&mut self) -> &mut [T] {
+		let pos = self.pos();
+		&mut self.backing_mut()[pos ..]
+	}
 	
 	/// Appends `slice` and increments the position accordingly
-	fn write(&mut self, slice: &[T]) where T: Copy;
+	fn write(&mut self, slice: &[T]) where T: Copy {
+		self.remaining_mut()[.. slice.len()].copy_from_slice(slice);
+		*self.pos_mut() += slice.len()
+	}
 }
 
 
@@ -38,25 +60,14 @@ impl<'a, T> BackedBuffer<'a, T> {
 	}
 }
 impl<'a, T> ReadableBuffer<T> for BackedBuffer<'a, T> {
-	/// Returns a mutable reference to the buffer's position
-	fn pos(&mut self) -> &mut usize {
+	fn backing(&self) -> &[T] {
+		self.backing
+	}
+	fn pos(&self) -> usize {
+		self.position
+	}
+	fn pos_mut(&mut self) -> &mut usize {
 		&mut self.position
-	}
-	
-	/// Returns the processed subslice (`&slice[.. *self.pos()]`)
-	fn processed(&self) -> &[T] {
-		&self.backing[.. self.position]
-	}
-	
-	/// Returns the remaining subslice (`&slice[*self.pos() ..]`)
-	fn remaining(&self) -> &[T] {
-		&self.backing[self.position ..]
-	}
-	
-	/// Reads `len`-bytes from the remaining subslice and increments the position accordingly
-	fn read(&mut self, len: usize) -> &[T] {
-		self.position += len;
-		&self.remaining()[.. len]
 	}
 }
 
@@ -72,46 +83,51 @@ impl<'a, T> MutableBackedBuffer<'a, T> {
 	}
 }
 impl<'a, T> ReadableBuffer<T> for MutableBackedBuffer<'a, T> {
-	/// Returns a mutable reference to the buffer's position
-	fn pos(&mut self) -> &mut usize {
+	fn backing(&self) -> &[T] {
+		self.backing
+	}
+	fn pos(&self) -> usize {
+		self.position
+	}
+	fn pos_mut(&mut self) -> &mut usize {
 		&mut self.position
-	}
-	
-	/// Returns the processed subslice (`&slice[.. *self.pos()]`)
-	fn processed(&self) -> &[T] {
-		&self.backing[.. self.position]
-	}
-	
-	/// Returns the remaining subslice (`&slice[*self.pos() ..]`)
-	fn remaining(&self) -> &[T] {
-		&self.backing[self.position ..]
-	}
-	
-	/// Reads `len`-bytes from the remaining subslice and increments the position accordingly
-	fn read(&mut self, len: usize) -> &[T] {
-		self.position += len;
-		&self.remaining()[.. len]
 	}
 }
 impl<'a, T> WriteableBuffer<T> for MutableBackedBuffer<'a, T> {
-	/// Returns a mutable reference to the buffer's position
-	fn pos(&mut self) -> &mut usize {
+	fn backing_mut(&mut self) -> &mut[T] {
+		self.backing
+	}
+}
+
+
+
+pub struct OwnedBuffer<T> {
+	backing: Vec<T>,
+	position: usize
+}
+impl<'a, T> MutableBackedBuffer<'a, T> {
+	pub fn new(size: usize) -> Self {
+		MutableBackedBuffer{ backing: vec![0u8; size], position: 0 }
+	}
+}
+impl<'a, T> ReadableBuffer<T> for MutableBackedBuffer<'a, T> {
+	fn backing(&self) -> &[T] {
+		&self.backing
+	}
+	fn pos(&self) -> usize {
+		self.position
+	}
+	fn pos_mut(&mut self) -> &mut usize {
 		&mut self.position
 	}
-	
-	/// Returns the processed subslice (`&slice[.. *self.pos()]`)
-	fn processed(&mut self) -> &mut[T] {
-		&mut self.backing[.. self.position]
+}
+impl<'a, T> WriteableBuffer<T> for MutableBackedBuffer<'a, T> {
+	fn backing_mut(&mut self) -> &mut[T] {
+		&mut self.backing
 	}
-	
-	/// Returns the remaining subslice (`&slice[*self.pos() ..]`)
-	fn remaining(&mut self) -> &mut[T] {
-		&mut self.backing[self.position ..]
-	}
-	
-	/// Appends `slice` and increments the position accordingly
-	fn write(&mut self, slice: &[T]) where T: Copy {
-		self.remaining()[.. slice.len()].copy_from_slice(slice);
-		self.position += slice.len()
+}
+impl<T> From<Vec<T>> for OwnedBuffer<T> {
+	fn from(vector: Vec<T>) -> Self {
+		OwnedBuffer{ backing: vector, position: 0 }
 	}
 }
