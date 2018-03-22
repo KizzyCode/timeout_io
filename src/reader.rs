@@ -2,7 +2,7 @@ use std;
 use std::io::Read;
 
 use super::etrace::Error;
-use super::{ libselect, time_remaining, IoError, WriteableBuffer, MutableBackedBuffer };
+use super::{ libselect, time_remaining, IoError, WriteableBuffer, MutableBackedBuffer, OwnedBuffer };
 
 
 
@@ -99,11 +99,13 @@ impl<T> Reader for T where T: Read + libselect::ToRawFd {
 		let timeout_point = std::time::Instant::now() + timeout;
 		
 		// Spin until `data` has been filled
+		let mut byte_buffer = OwnedBuffer::new(1);
 		while !buffer.remaining().is_empty() {
 			// Read next byte
 			{
-				let mut sub_buffer = MutableBackedBuffer::new(&mut buffer.remaining_mut()[.. 1]);
-				try_err!(Reader::read_exact(self, &mut sub_buffer, time_remaining(timeout_point)));
+				byte_buffer.reset_pos();
+				try_err!(Reader::read_exact(self, &mut byte_buffer, time_remaining(timeout_point)));
+				buffer.write(byte_buffer.processed())
 			}
 			// Check for pattern
 			let filled = buffer.processed().len();
