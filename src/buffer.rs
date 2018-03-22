@@ -8,6 +8,11 @@ pub trait ReadableBuffer<T> {
 	/// Returns a mutable reference to the buffer's position
 	fn pos_mut(&mut self) -> &mut usize;
 	
+	/// Resets the position
+	fn reset_pos(&mut self) {
+		*self.pos_mut() = 0;
+	}
+	
 	/// Returns the processed subslice (`&slice[.. *self.pos()]`)
 	fn processed(&self) -> &[T] {
 		&self.backing()[.. self.pos()]
@@ -108,6 +113,9 @@ pub struct OwnedBuffer<T> {
 impl<T> OwnedBuffer<T> {
 	pub fn new(size: usize) -> Self where T: Default + Clone {
 		OwnedBuffer{ backing: vec![T::default(); size], position: 0 }
+	}
+	pub fn resize(&mut self, new_size: usize) {
+		if self.position > new_size { panic!("Cannot make buffer smaller than the current position") }
 	}
 }
 impl<T> ReadableBuffer<T> for OwnedBuffer<T> {
