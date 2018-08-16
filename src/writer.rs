@@ -1,85 +1,95 @@
-use std;
-use std::io::Write;
-
-use super::etrace::Error;
-use super::{ libselect, time_remaining, IoError, ReadableBuffer };
-
+use super::{ IoError, Result, SliceQueue, InstantExt, WaitForEvent, SetBlockingMode };
+use std::{ io::{ Write, ErrorKind as IoErrorKind }, time::{ Duration, Instant } };
 
 
 /// A trait for writing with timeouts
 pub trait Writer {
-	/// Executes _one_ `write`-operation to write _as much bytes as possible_ from
-	/// `buffer.remaining()`
+	/// Executes _one_ `write`-operation to write _as much bytes as possible_ from `data`
 	///
-	/// This is especially useful in packet-based contexts where `write`-operations are atomic
-	/// (like in UDP)
+	/// This is especially useful in packet-based contexts where `write`-operations are atomic (like
+	/// in UDP)
 	///
-	/// This functions returns either `Ok(())` if __one__ `read`-call read some bytes or
-	/// `Err(IOError(std::io::ErrorKind::TimedOut))` if `timeout` expired or
-	/// `Err(IOError(...))` if another IO-error occurred
+	/// _Note: This function catches all interal timeouts/interrupts and returns only if there was
+	/// either one successful `write`-operation or the `timeout` was hit or a non-recoverable error
+	/// occurred._
 	///
-	/// __Note: This function catches *all* interal timeouts/interrupts and returns only if we had
-	/// _one_ successful `write`-operation or the passed timeout was hit or an error occurred__
-	fn write_oneshot(&mut self, buffer: &mut ReadableBuffer<u8>, timeout: std::time::Duration) -> Result<(), Error<IoError>>;
+	/// __Warning: `self` will be switched into nonblocking mode. It's up to you to restore the
+	/// previous mode if necessary.__
+	///
+	/// Parameters:
+	///  - `data`: The data to write
+	///  - `timeout`: The maximum time this function will wait for `self` to become writeable
+	///
+	/// Returns either __nothing__ or a corresponding `IoError`
+	fn write_oneshot(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()>;
 	
-	/// Writes all bytes in `buffer.remaining()`
+	/// Writes all bytes in `data`
 	///
 	/// This is especially useful in stream-based contexts where partial-`write`-calls are common
 	/// (like in TCP)
 	///
-	/// This functions returns either `Ok(())` if the buffer was written completely or
-	/// `Err(IOError(std::io::ErrorKind::TimedOut))` if `timeout` expired or
-	/// `Err(IOError(...))` if another IO-error occurred
+	/// _Note: This function catches all interal timeouts/interrupts and returns only if either
+	/// `data` has been filled completely or the `timeout` was hit or a non-recoverable error
+	/// occurred._
 	///
-	/// __Note: This function catches *all* interal timeouts/interrupts and returns only if
-	/// `timeout` was hit or an error occurred__
-	fn write_exact(&mut self, buffer: &mut ReadableBuffer<u8>, timeout: std::time::Duration) -> Result<(), Error<IoError>>;
+	/// __Warning: `self` will be switched into nonblocking mode. It's up to you to restore the
+	/// previous mode if necessary.__
+	///
+	/// Parameters:
+	///  - `data`: The data to write
+	///  - `timeout`: The maximum time this function will wait for `self` to become writeable
+	///
+	/// Returns either __nothing__ or a corresponding `IoError`
+	fn write_exact(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()>;
 }
-impl<T> Writer for T where T: Write + libselect::ToRawFd {
-	fn write_oneshot(&mut self, buffer: &mut ReadableBuffer<u8>, timeout: std::time::Duration) -> Result<(), Error<IoError>> {
-		// Wait for write-event
-		if !try_err!(libselect::event_write(self, timeout)) { throw_err!(std::io::ErrorKind::TimedOut.into()) }
+impl<T: Write + WaitForEvent + SetBlockingMode> Writer for T {
+	fn write_oneshot(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+		// Make nonblocking
+		try_err!(self.make_nonblocking());
 		
-		// Write data
+		// Immediately return if we should not read any bytes
+		if data.is_empty() { return Ok(()) }
+		
+		// Wait for write-events and write data
+		let timeout_point = Instant::now() + timeout;
 		loop {
-			match std::io::Write::write(self, buffer.remaining()) {
-				// Successful write
+			try_err!(self.wait_until_writeable(timeout_point.remaining()));
+			match self.write(data) {
+				Ok(bytes_written) if bytes_written == 0 =>
+					throw_err!(IoErrorKind::UnexpectedEof.into()),
 				Ok(bytes_written) => {
-					*buffer.pos_mut() += bytes_written;
+					data.discard_n(bytes_written).unwrap();
 					return Ok(())
 				},
-				// An error occurred
 				Err(error) => {
 					let error = IoError::from(error);
-					if error.is_fatal { throw_err!(error) }
+					if error.non_recoverable { throw_err!(error) }
 				}
 			}
 		}
 	}
 	
-	fn write_exact(&mut self, buffer: &mut ReadableBuffer<u8>, timeout: std::time::Duration) -> Result<(), Error<IoError>> {
-		// Compute timeout-point
-		let timeout_point = std::time::Instant::now() + timeout;
+	fn write_exact(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+		// Make nonblocking
+		try_err!(self.make_nonblocking());
 		
-		// Loop until timeout
-		while std::time::Instant::now() < timeout_point && !buffer.remaining().is_empty() {
+		// Compute timeout-point and loop until data is empty
+		let timeout_point = Instant::now() + timeout;
+		while !data.is_empty() {
 			// Wait for write-event
-			if !try_err!(libselect::event_write(self, time_remaining(timeout_point))) { throw_err!(std::io::ErrorKind::TimedOut.into()) }
+			try_err!(self.wait_until_writeable(timeout_point.remaining()));
 			
 			// Write data
-			match std::io::Write::write(self, buffer.remaining()) {
+			match self.write(data) {
 				// (Partial-)write
-				Ok(bytes_written) => *buffer.pos_mut() += bytes_written,
+				Ok(bytes_written) => data.discard_n(bytes_written).unwrap(),
 				// An error occurred
 				Err(error) => {
 					let error = IoError::from(error);
-					if error.is_fatal { throw_err!(error) }
+					if error.non_recoverable { throw_err!(error) }
 				}
 			}
 		}
-		
-		// Check if we wrote all bytes or if an error occurred
-		if !buffer.remaining().is_empty() { throw_err!(std::io::ErrorKind::TimedOut.into()) }
 		Ok(())
 	}
 }

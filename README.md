@@ -1,4 +1,5 @@
-[![License](https://img.shields.io/badge/License-BSD%202--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
+[![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 # About
 This library provides a simple timeout-based API for IO-operations.
@@ -16,13 +17,11 @@ _Note: We currently do not provide a function for timeout-based `connect`-calls;
 if you did so 😇)_
 
 # Dependencies
-Because Rust does not provide timeout-based APIs for all functions we currently rely on
-[libselect](https://github.com/KizzyCode/libselect)
+My [`etrace`](https://crates.io/crates/etrace) crate for error handling and
+[`tiny_future`](https://crates.io/crates/tiny_future) which is used during name resolution (which needs to be done in a
+separate thread due to API limitations).
 
 # Build Library and Documentation
-Make sure that [libselect](https://github.com/KizzyCode/libselect) and the Rust-toolchain are installed properly and
-up-to-date.
-
 To build the documentation, go into the projects root-directory and run `cargo doc --release`; to open the documentation
 in your web-browser, run `cargo doc --open`.
 

@@ -1,46 +1,68 @@
 #[macro_use] extern crate etrace;
-#[macro_use] extern crate future;
+#[macro_use] extern crate tiny_future;
+extern crate slice_queue;
 
-pub mod libselect;
-pub mod reader;
-pub mod writer;
-pub mod acceptor;
-pub mod resolver;
-pub mod buffer;
+mod event;
+mod reader;
+mod writer;
+mod acceptor;
+mod resolver;
 
-pub use reader::Reader;
-pub use writer::Writer;
-pub use acceptor::Acceptor;
-pub use resolver::{ DnsResolvable, IpParseable };
-pub use buffer::{ ReadableBuffer, WriteableBuffer, BackedBuffer, MutableBackedBuffer, OwnedBuffer };
+
+pub use slice_queue::SliceQueue;
+pub use self::{
+	event::{ RawFd, SetBlockingMode, WaitForEvent, Event, libselect },
+	reader::Reader,
+	writer::Writer,
+	acceptor::Acceptor,
+	resolver::{ DnsResolvable, IpParseable }
+};
+pub use std::io::ErrorKind as IoErrorKind;
+use std::{ io::Error as StdIoError, time::{ Duration, Instant } };
 
 
 #[derive(Debug, Clone)]
 /// An IO-error-wrapper
 pub struct IoError {
-	pub kind: std::io::ErrorKind,
-	pub is_fatal: bool
+	pub kind: IoErrorKind,
+	pub non_recoverable: bool
 }
-impl From<std::io::ErrorKind> for IoError {
-	fn from(kind: std::io::ErrorKind) -> Self {
-		use std::io::ErrorKind;
+impl From<IoErrorKind> for IoError {
+	fn from(kind: IoErrorKind) -> Self {
 		match kind {
-			ErrorKind::Interrupted => IoError { kind: ErrorKind::Interrupted, is_fatal: false },
-			ErrorKind::TimedOut => IoError { kind: ErrorKind::TimedOut, is_fatal: false },
-			other => IoError { kind: other, is_fatal: true }
+			IoErrorKind::Interrupted => IoError { kind: IoErrorKind::Interrupted, non_recoverable: false },
+			IoErrorKind::TimedOut => IoError { kind: IoErrorKind::TimedOut, non_recoverable: false },
+			other => Self{ kind: other, non_recoverable: true }
 		}
 	}
 }
-impl From<std::io::Error> for IoError {
-	fn from(error: std::io::Error) -> Self {
+impl From<StdIoError> for IoError {
+	fn from(error: StdIoError) -> Self {
 		error.kind().into()
 	}
 }
+/// Syntactic sugar for `std::result::Result<T, etrace::Error<IoError>>`
+pub type Result<T> = std::result::Result<T, etrace::Error<IoError>>;
 
 
-
-/// Computes the remaining time underflow-safe
-pub fn time_remaining(timeout_point: std::time::Instant) -> std::time::Duration {
-	let now = std::time::Instant::now();
-	if now > timeout_point { std::time::Duration::default() } else { timeout_point - now }
+pub trait InstantExt {
+	/// Computes the remaining time underflow-safe
+	///
+	/// Returns __the remaining time__
+	fn remaining(self) -> Duration;
+}
+impl InstantExt for Instant {
+	fn remaining(self) -> Duration {
+		let now = Instant::now();
+		if now > self { Duration::from_secs(0) }
+			else { self - now }
+	}
+}
+pub trait DurationExt {
+	fn as_ms(&self) -> u64;
+}
+impl DurationExt for Duration {
+	fn as_ms(&self) -> u64 {
+		(self.as_secs() * 1000) + (self.subsec_nanos() as u64 / 1_000_000)
+	}
 }

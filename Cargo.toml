@@ -1,9 +1,17 @@
 [package]
 name = "io"
-version = "0.1.8"
-authors = ["KizzyCode <development@kizzycode.de>"]
+version = "0.2.0"
+authors = ["KizzyCode Software Labs./Keziah Biermann <development@kizzycode.de>"]
+description = "This library provides a simple timeout-based API for IO-operations"
+license = "BSD-2-Clause OR MIT"
+repository = "https://github.com/KizzyCode/io"
+readme = "README.md"
 build = "build.rs"
 
 [dependencies]
-etrace = { git = "https://github.com/KizzyCode/etrace" }
-future = { git = "https://github.com/KizzyCode/future" }
+etrace = "1.0.0"
+slice_queue = "0.2.2"
+tiny_future = "0.3.1"
+
+[build-dependencies]
+gcc = "0.3.54"

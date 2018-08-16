@@ -1,36 +1,42 @@
-use std;
-
-use super::etrace::Error;
-use super::{ libselect, time_remaining, IoError };
-
+use super::{ IoError, Result, InstantExt, WaitForEvent, SetBlockingMode };
+use std::{
+	time::{ Duration, Instant },
+	net::{ TcpListener, TcpStream }
+};
 
 
 /// A trait for accepting elements, e.g. a TCP-listener
 pub trait Acceptor<T> {
 	/// Accepts a type-`T`-connection
-	fn accept(&self, timeout: std::time::Duration) -> Result<T, Error<IoError>>;
+	///
+	/// __Warning: In most cases, `self` will be switched into nonblocking mode. It's up to you to
+	/// restore the previous mode if necessary.__
+	///
+	/// Parameters:
+	///  - `timeout`: The time to wait for a connection
+	///
+	/// Returns either __the accepted connection__ or a corresponding `IoError`
+	fn accept(&self, timeout: Duration) -> Result<T>;
 }
-impl Acceptor<std::net::TcpStream> for std::net::TcpListener {
-	fn accept(&self, timeout: std::time::Duration) -> Result<std::net::TcpStream, Error<IoError>> {
-		// Compute timeout-point
-		let timeout_point = std::time::Instant::now() + timeout;
+impl Acceptor<TcpStream> for TcpListener {
+	fn accept(&self, timeout: Duration) -> Result<TcpStream> {
+		// Make nonblocking
+		try_err!(self.make_nonblocking());
 		
-		// Try to accept once until the timeout occurred
-		while std::time::Instant::now() < timeout_point {
+		// Compute timeout-point and try to accept once until the timeout occurred
+		let timeout_point = Instant::now() + timeout;
+		loop {
 			// Wait for read-event
-			if !try_err!(libselect::event_read(self, time_remaining(timeout_point))) { throw_err!(std::io::ErrorKind::TimedOut.into()) }
+			try_err!(self.wait_until_readable(timeout_point.remaining()));
 			
 			// Accept connection
 			match self.accept() {
-				// Accepted connection
 				Ok(connection) => return Ok(connection.0),
-				// An error occurred
 				Err(error) => {
 					let error = IoError::from(error);
-					if error.is_fatal { throw_err!(error) }
+					if error.non_recoverable { throw_err!(error) }
 				}
 			}
 		}
-		throw_err!(std::io::ErrorKind::TimedOut.into())
 	}
 }
