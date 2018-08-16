@@ -91,7 +91,7 @@ fn test_write_oneshot_err() {
 		IoErrorKind::BrokenPipe
 	)
 }
-#[test]
+#[test] #[ignore]
 fn test_write_oneshot_timeout() {
 	let (mut s0, _s1) = socket_pair();
 	s0.set_nonblocking(true).unwrap();
@@ -134,7 +134,7 @@ fn test_write_exact_err() {
 		IoErrorKind::BrokenPipe
 	)
 }
-#[test]
+#[test] #[ignore]
 fn test_write_exact_timeout() {
 	let (mut s0, _s1) = socket_pair();
 	
