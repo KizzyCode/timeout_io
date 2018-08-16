@@ -59,6 +59,9 @@ impl InstantExt for Instant {
 	}
 }
 pub trait DurationExt {
+	/// The duration in milliseconds
+	///
+	/// Returns __`self` as milliseconds__
 	fn as_ms(&self) -> u64;
 }
 impl DurationExt for Duration {
