@@ -1,5 +1,6 @@
 [![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Travis CI](https://travis-ci.org/KizzyCode/io.svg?branch=master)](https://travis-ci.org/KizzyCode/io)
 
 # About
 This library provides a simple timeout-based API for IO-operations.
@@ -14,7 +15,7 @@ All functions are defined as traits, so that you can easily wrap your own IO-cha
 
 _Note: We currently do not provide a function for timeout-based `connect`-calls; use
 `std::net::TcpStream::connect_timeout` for TCP-connections or build sth. using `io::libselect` (and feel free to commit
-if you did so 😇)_
+if you do so 😇)_
 
 # Dependencies
 My [`etrace`](https://crates.io/crates/etrace) crate for error handling and
