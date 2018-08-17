@@ -7,9 +7,9 @@ This library provides a simple timeout-based API for IO-operations.
 
 We provide the following features:
  - DNS-resolution (currently uses a background-thread)
- - TCP-accept (uses [libselect](https://github.com/KizzyCode/libselect))
- - TCP-read/read-until/write (uses [libselect](https://github.com/KizzyCode/libselect))
- - UDP-receive/send (uses [libselect](https://github.com/KizzyCode/libselect))
+ - TCP-accept (uses libselect)
+ - TCP-read/read-until/write (uses libselect)
+ - UDP-receive/send (uses libselect)
 
 All functions are defined as traits, so that you can easily wrap your own IO-channels without breaking compatibility.
 
