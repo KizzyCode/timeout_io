@@ -1,5 +1,5 @@
-extern crate io;
-use io::*;
+extern crate timeout_io;
+use timeout_io::*;
 use std::{ time::Duration, thread, net::{ TcpListener, TcpStream } };
 
 #[test]

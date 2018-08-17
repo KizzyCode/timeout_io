@@ -1,10 +1,10 @@
 #[macro_use] extern crate tiny_future;
 extern crate slice_queue;
-extern crate io;
+extern crate timeout_io;
 
 use tiny_future::{ Future, async };
 use slice_queue::SliceQueue;
-use io::*;
+use timeout_io::*;
 use std::{
 	time::Duration, thread, io::Write,
 	net::{ TcpListener, TcpStream }

@@ -1,5 +1,5 @@
-extern crate io;
-use io::*;
+extern crate timeout_io;
+use timeout_io::*;
 use std::{
 	time::{ Duration, SystemTime, UNIX_EPOCH },
 	net::{ SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr, Ipv6Addr }
