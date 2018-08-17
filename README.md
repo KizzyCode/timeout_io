@@ -1,6 +1,6 @@
 [![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Travis CI](https://travis-ci.org/KizzyCode/io.svg?branch=master)](https://travis-ci.org/KizzyCode/io)
+[![Travis CI](https://travis-ci.org/KizzyCode/timeout_io.svg?branch=master)](https://travis-ci.org/KizzyCode/timeout_io)
 
 # About
 This library provides a simple timeout-based API for IO-operations.
