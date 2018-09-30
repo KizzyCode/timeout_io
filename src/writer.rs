@@ -13,8 +13,8 @@ pub trait Writer {
 	/// either one successful `write`-operation or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: `self` will be switched into nonblocking mode. It's up to you to restore the
-	/// previous mode if necessary.__
+	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary._
 	///
 	/// Parameters:
 	///  - `data`: The data to write
@@ -32,6 +32,9 @@ pub trait Writer {
 	/// `data` has been filled completely or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
+	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary._
+	///
 	/// Parameters:
 	///  - `data`: The data to write
 	///  - `timeout`: The maximum time this function will wait for `self` to become writeable
@@ -41,6 +44,9 @@ pub trait Writer {
 }
 impl<T: Write + WaitForEvent> Writer for T {
 	fn write_oneshot(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+		// Make the socket non-blocking
+		try_err!(self.set_blocking_mode(false));
+		
 		// Immediately return if we should not read any bytes
 		if data.is_empty() { return Ok(()) }
 		
@@ -64,6 +70,9 @@ impl<T: Write + WaitForEvent> Writer for T {
 	}
 	
 	fn write_exact(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+		// Make the socket non-blocking
+		try_err!(self.set_blocking_mode(false));
+		
 		// Compute timeout-point and loop until data is empty
 		let timeout_point = Instant::now() + timeout;
 		while !data.is_empty() {

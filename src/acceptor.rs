@@ -9,6 +9,9 @@ use std::{
 pub trait Acceptor<T> {
 	/// Accepts a type-`T`-connection
 	///
+	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary._
+	///
 	/// Parameters:
 	///  - `timeout`: The time to wait for a connection
 	///
@@ -17,6 +20,9 @@ pub trait Acceptor<T> {
 }
 impl Acceptor<TcpStream> for TcpListener {
 	fn accept(&self, timeout: Duration) -> Result<TcpStream> {
+		// Make the socket non-blocking
+		try_err!(self.set_blocking_mode(false));
+		
 		// Compute timeout-point and try to accept once until the timeout occurred
 		let timeout_point = Instant::now() + timeout;
 		loop {

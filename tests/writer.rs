@@ -6,9 +6,8 @@ use tiny_future::{ Future, async };
 use slice_queue::SliceQueue;
 use timeout_io::*;
 use std::{
-	thread, io::{ Read, Write }, collections::hash_map::DefaultHasher, hash::Hasher,
-	time::{ Duration, SystemTime, UNIX_EPOCH },
-	net::{ TcpListener, TcpStream, Shutdown }
+	thread, time::Duration,
+	io::{ Read, Write }, net::{ TcpListener, TcpStream, Shutdown }
 };
 
 
@@ -36,22 +35,10 @@ fn socket_pair() -> (TcpStream, TcpStream) {
 }
 
 fn rand(min_len: usize) -> SliceQueue<u8> {
-	fn u64_be(value: u64) -> [u8; 8] {
-		[(value >> 56) as u8, (value >> 48) as u8, (value >> 40) as u8, (value >> 32) as u8,
-			(value >> 24) as u8, (value >> 16) as u8, (value >>  8) as u8, (value >>  0) as u8]
-	}
-	fn next(prev: &[u8]) -> [u8; 8] {
-		let mut hasher = DefaultHasher::new();
-		hasher.write(prev);
-		u64_be(hasher.finish())
-	}
+	let block: &[u8] = include_bytes!("rand.dat");
 	
 	let mut slice_queue = SliceQueue::new();
-	let mut prev = u64_be(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_ms());
-	while slice_queue.len() < min_len {
-		prev = next(&prev);
-		slice_queue.push_from(&prev).unwrap();
-	}
+	while slice_queue.len() < min_len { slice_queue.push_from(block).unwrap() }
 	slice_queue
 }
 
@@ -96,21 +83,22 @@ fn test_write_oneshot_err() {
 		}
 	);
 }
-#[test] #[ignore]
+#[test]
 fn test_write_oneshot_timeout() {
 	let (mut s0, _s1) = socket_pair();
 	s0.set_nonblocking(true).unwrap();
 	
 	// Write until the connection buffer is apparently filled
-	let mut data = rand(64 * 1024 * 1024);
 	loop {
-		if let Err(e) = s0.write(&data) {
-			if e.kind() == IoErrorKind::WouldBlock { break }
+		let mut data = rand(64 * 1024 * 1024);
+		if let Err(e) = s0.write_oneshot(&mut data, Duration::from_secs(1)) {
+			if e.kind.kind == IoErrorKind::TimedOut { break }
 				else { panic!(e) }
 		}
 	}
 	
-	// Try to write some data
+	// Final test
+	let mut data = rand(64 * 1024 * 1024);
 	assert_eq!(
 		s0.write_oneshot(&mut data, Duration::from_secs(1)).unwrap_err().kind.kind,
 		IoErrorKind::TimedOut

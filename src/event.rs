@@ -11,6 +11,7 @@ pub mod libselect {
 	use std::os::raw::c_int;
 	extern {
 		pub fn wait_for_event(descriptor: u64, event_mask: u8, timeout_ms: u64) -> u8;
+		pub fn set_blocking_mode(descriptor: u64, blocking: c_int) -> u8;
 		pub fn get_errno() -> c_int;
 	}
 }
@@ -68,6 +69,14 @@ pub trait WaitForEvent {
 	///
 	/// Returns either __nothing__ or a corresponding `IoError`
 	fn wait_until_writeable(&self, timeout: Duration) -> Result<()>;
+	
+	/// Makes `self` blocking or non-blocking
+	///
+	/// Parameters:
+	///  - `blocking`: Set to `true` if you want to make the socket blocking, `false` otherwise
+	///
+	/// Returns either __nothing__ or a corresponding `IoError`
+	fn set_blocking_mode(&self, blocking: bool) -> Result<()>;
 }
 impl<T: RawFd> WaitForEvent for T {
 	fn wait_until_readable(&self, timeout: Duration) -> Result<()> {
@@ -96,6 +105,17 @@ impl<T: RawFd> WaitForEvent for T {
 			r if r & Event::SyscallError => throw_err!(StdIoError::from_raw_os_error(unsafe{ libselect::get_errno() }).into()),
 			r if r & Event::Write => Ok(()),
 			_ => throw_err!(IoErrorKind::TimedOut.into())
+		}
+	}
+	fn set_blocking_mode(&self, blocking: bool) -> Result<()> {
+		let result = unsafe{ libselect::set_blocking_mode(
+			self.raw_fd(),
+			if blocking { 1 } else { 0 }
+		) };
+		match result {
+			0 => Ok(()),
+			r if r & Event::SyscallError => throw_err!(StdIoError::from_raw_os_error(unsafe{ libselect::get_errno() }).into()),
+			_ => unreachable!()
 		}
 	}
 }

@@ -16,6 +16,9 @@ pub trait Reader {
 	/// __Warning: This function allocates `buffer.remaining()` bytes, so please ensure that you've
 	/// set an acceptable limit.__
 	///
+	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary._
+	///
 	/// Parameters:
 	///  - `buffer`: The buffer to write the data to
 	///  - `timeout`: The maximum time this function will wait for `self` to become readable
@@ -35,6 +38,9 @@ pub trait Reader {
 	/// __Warning: The buffer is filled completely, so please ensure that you've set an acceptable
 	/// limit.__
 	///
+	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary._
+	///
 	/// Parameters:
 	///  - `buffer`: The buffer to fill with data
 	///  - `timeout`: The maximum time this function will block
@@ -51,6 +57,9 @@ pub trait Reader {
 	/// __Warning: The buffer may be filled completely, so please ensure that you've set an
 	/// acceptable limit.__
 	///
+	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary._
+	///
 	/// Parameters:
 	///  - `pattern`: The pattern up to which you want to read.
 	///  - `buffer`: The buffer to write the data to
@@ -65,6 +74,9 @@ pub trait Reader {
 }
 impl<T: Read + WaitForEvent> Reader for T {
 	fn read_oneshot(&mut self, buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+		// Make the socket non-blocking
+		try_err!(self.set_blocking_mode(false));
+		
 		// Immediately return if we should not read any bytes
 		if buffer.remaining() == 0 { return Ok(()) }
 		
@@ -84,6 +96,9 @@ impl<T: Read + WaitForEvent> Reader for T {
 	}
 	
 	fn read_exact(&mut self, buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+		// Make the socket non-blocking
+		try_err!(self.set_blocking_mode(false));
+		
 		// Compute timeout-point and loop until buffer is filled completely
 		let timeout_point = Instant::now() + timeout;
 		while buffer.remaining() > 0 {
