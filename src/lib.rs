@@ -25,7 +25,7 @@ mod acceptor;
 mod resolver;
 
 
-pub use slice_queue::SliceQueue;
+pub use slice_queue::{ SliceQueue, ReadableSliceQueue, WriteableSliceQueue };
 pub use self::{
 	event::{ RawFd, WaitForEvent, Event, libselect },
 	reader::Reader,

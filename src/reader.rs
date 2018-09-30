@@ -1,4 +1,4 @@
-use super::{ IoError, Result, SliceQueue, InstantExt, WaitForEvent };
+use super::{ IoError, Result, SliceQueue, ReadableSliceQueue, WriteableSliceQueue, InstantExt, WaitForEvent };
 use std::{ io::Read, time::{ Duration, Instant }, io::ErrorKind as IoErrorKind };
 
 

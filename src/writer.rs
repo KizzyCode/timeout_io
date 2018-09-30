@@ -1,4 +1,4 @@
-use super::{ IoError, Result, SliceQueue, InstantExt, WaitForEvent };
+use super::{ IoError, Result, SliceQueue, ReadableSliceQueue, InstantExt, WaitForEvent };
 use std::{ io::{ Write, ErrorKind as IoErrorKind }, time::{ Duration, Instant } };
 
 
@@ -58,7 +58,7 @@ impl<T: Write + WaitForEvent> Writer for T {
 				Ok(bytes_written) if bytes_written == 0 =>
 					throw_err!(IoErrorKind::UnexpectedEof.into()),
 				Ok(bytes_written) => {
-					data.discard_n(bytes_written).unwrap();
+					data.drop_n(bytes_written).unwrap();
 					return Ok(())
 				},
 				Err(error) => {
@@ -82,7 +82,7 @@ impl<T: Write + WaitForEvent> Writer for T {
 			// Write data
 			match self.write(data) {
 				// (Partial-)write
-				Ok(bytes_written) => data.discard_n(bytes_written).unwrap(),
+				Ok(bytes_written) => data.drop_n(bytes_written).unwrap(),
 				// An error occurred
 				Err(error) => {
 					let error = IoError::from(error);
