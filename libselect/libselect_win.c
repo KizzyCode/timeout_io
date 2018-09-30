@@ -15,6 +15,7 @@
 // Includes
 #include <stdint.h>
 #include <Winsock2.h>
+#include <fcntl.h>
 
 
 // Constants
@@ -53,6 +54,11 @@ uint8_t wait_for_event(uint64_t descriptor, uint8_t event, uint64_t timeout_ms) 
 	if (FD_ISSET(sock_native, &error_set)) result |= EVENT_ERROR;
 
 	return result;
+}
+
+uint8_t set_blocking_mode(uint64_t descriptor, int blocking) {
+	unsigned long mode = blocking ? 0 : 1;
+    return (ioctlsocket((SOCKET)descriptor, FIONBIO, &mode) == 0) ? 0 : SYSCALL_ERROR;
 }
 
 int get_errno() {

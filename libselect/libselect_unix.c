@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 
 // Constants
@@ -57,6 +58,18 @@ uint8_t wait_for_event(uint64_t descriptor, uint8_t event, uint64_t timeout_ms) 
 	if (FD_ISSET(sock_native, &error_set)) result |= EVENT_ERROR;
 	
 	return result;
+}
+
+uint8_t set_blocking_mode(uint64_t descriptor, int blocking) {
+	int sock_native = (int)descriptor;
+
+	// Get current flags
+	int flags = fcntl(sock_native, F_GETFL, 0);
+    if (flags == -1) return SYSCALL_ERROR;
+
+    // Add new flag
+    flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
+    return (fcntl(sock_native, F_SETFL, flags) == 0) ? 0 : SYSCALL_ERROR;
 }
 
 int get_errno() {
