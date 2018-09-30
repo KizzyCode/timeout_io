@@ -86,10 +86,17 @@ fn test_write_oneshot_err() {
 	s0.shutdown(Shutdown::Both).unwrap();
 	
 	let mut data = rand(16 * 1024 * 1024);
+	
+	let err = s0.write_oneshot(&mut data, Duration::from_secs(1)).unwrap_err();
+	eprintln!("*> Error: {}", err);
 	assert_eq!(
-		s0.write_oneshot(&mut data, Duration::from_secs(1)).unwrap_err().kind.kind,
-		IoErrorKind::BrokenPipe
-	)
+		err.kind.kind,
+		match true {
+			_ if cfg!(unix) => IoErrorKind::BrokenPipe,
+			_ if cfg!(windows) => IoErrorKind::Other,
+			_ => panic!("Unsupported platform")
+		}
+	);
 }
 #[test] #[ignore]
 fn test_write_oneshot_timeout() {
@@ -129,10 +136,17 @@ fn test_write_exact_err() {
 	s0.shutdown(Shutdown::Both).unwrap();
 	
 	let data = rand(64 * 1024 * 1024);
+	
+	let err = s0.write_exact(&mut data.clone(), Duration::from_secs(4)).unwrap_err();
+	eprintln!("*> Error: {}", err);
 	assert_eq!(
-		s0.write_exact(&mut data.clone(), Duration::from_secs(4)).unwrap_err().kind.kind,
-		IoErrorKind::BrokenPipe
-	)
+		err.kind.kind,
+		match true {
+			_ if cfg!(unix) => IoErrorKind::BrokenPipe,
+			_ if cfg!(windows) => IoErrorKind::Other,
+			_ => panic!("Unsupported platform")
+		}
+	);
 }
 #[test] #[ignore]
 fn test_write_exact_timeout() {
