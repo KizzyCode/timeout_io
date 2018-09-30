@@ -1,14 +1,16 @@
 [![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Travis CI](https://travis-ci.org/KizzyCode/timeout_io.svg?branch=master)](https://travis-ci.org/KizzyCode/timeout_io)
+[![AppVeyor CI](https://ci.appveyor.com/api/projects/status/github/KizzyCode/timeout_io?svg=true)](https://ci.appveyor.com/project/KizzyCode/timeout-io)
 
 # About
 This library provides a simple timeout-based API for IO-operations.
 
-We provide the following features:
+It provides the following features:
  - DNS-resolution (currently uses a background-thread)
  - TCP-accept (uses libselect)
  - TCP-read/read-until/write (uses libselect)
+ - StdIOE-read/read-write/write (uses libselect)
  - UDP-receive/send (uses libselect)
 
 All functions are defined as traits, so that you can easily wrap your own IO-channels without breaking compatibility.
@@ -20,7 +22,7 @@ if you do so 😇)_
 # Dependencies
 My [`etrace`](https://crates.io/crates/etrace) crate for error handling and
 [`tiny_future`](https://crates.io/crates/tiny_future) which is used during name resolution (which needs to be done in a
-separate thread due to API limitations).
+separate thread due to OS-API limitations).
 
 # Build Library and Documentation
 To build the documentation, go into the projects root-directory and run `cargo doc --release`; to open the documentation

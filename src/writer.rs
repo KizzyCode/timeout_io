@@ -1,4 +1,4 @@
-use super::{ IoError, Result, SliceQueue, InstantExt, WaitForEvent, SetBlockingMode };
+use super::{ IoError, Result, SliceQueue, InstantExt, WaitForEvent };
 use std::{ io::{ Write, ErrorKind as IoErrorKind }, time::{ Duration, Instant } };
 
 
@@ -32,9 +32,6 @@ pub trait Writer {
 	/// `data` has been filled completely or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: `self` will be switched into nonblocking mode. It's up to you to restore the
-	/// previous mode if necessary.__
-	///
 	/// Parameters:
 	///  - `data`: The data to write
 	///  - `timeout`: The maximum time this function will wait for `self` to become writeable
@@ -42,11 +39,8 @@ pub trait Writer {
 	/// Returns either __nothing__ or a corresponding `IoError`
 	fn write_exact(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()>;
 }
-impl<T: Write + WaitForEvent + SetBlockingMode> Writer for T {
+impl<T: Write + WaitForEvent> Writer for T {
 	fn write_oneshot(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
-		// Make nonblocking
-		try_err!(self.make_nonblocking());
-		
 		// Immediately return if we should not read any bytes
 		if data.is_empty() { return Ok(()) }
 		
@@ -70,9 +64,6 @@ impl<T: Write + WaitForEvent + SetBlockingMode> Writer for T {
 	}
 	
 	fn write_exact(&mut self, data: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
-		// Make nonblocking
-		try_err!(self.make_nonblocking());
-		
 		// Compute timeout-point and loop until data is empty
 		let timeout_point = Instant::now() + timeout;
 		while !data.is_empty() {

@@ -1,4 +1,4 @@
-use super::{ IoError, Result, SliceQueue, InstantExt, WaitForEvent, SetBlockingMode };
+use super::{ IoError, Result, SliceQueue, InstantExt, WaitForEvent };
 use std::{ io::Read, time::{ Duration, Instant }, io::ErrorKind as IoErrorKind };
 
 
@@ -14,10 +14,7 @@ pub trait Reader {
 	/// occurred._
 	///
 	/// __Warning: This function allocates `buffer.remaining()` bytes, so please ensure that you've
-	/// set an acceptable limit__
-	///
-	/// __Warning: `self` will be switched into nonblocking mode. It's up to you to restore the
-	/// previous mode if necessary.__
+	/// set an acceptable limit.__
 	///
 	/// Parameters:
 	///  - `buffer`: The buffer to write the data to
@@ -38,9 +35,6 @@ pub trait Reader {
 	/// __Warning: The buffer is filled completely, so please ensure that you've set an acceptable
 	/// limit.__
 	///
-	/// __Warning: `self` will be switched into nonblocking mode. It's up to you to restore the
-	/// previous mode if necessary.__
-	///
 	/// Parameters:
 	///  - `buffer`: The buffer to fill with data
 	///  - `timeout`: The maximum time this function will block
@@ -55,10 +49,7 @@ pub trait Reader {
 	/// or a non-recoverable error occurred._
 	///
 	/// __Warning: The buffer may be filled completely, so please ensure that you've set an
-	/// acceptable limit__
-	///
-	/// __Warning: `self` will be switched into nonblocking mode. It's up to you to restore the
-	/// previous mode if necessary.__
+	/// acceptable limit.__
 	///
 	/// Parameters:
 	///  - `pattern`: The pattern up to which you want to read.
@@ -72,11 +63,8 @@ pub trait Reader {
 	///  - another corresponding `IoError`
 	fn read_until(&mut self, pattern: &[u8], buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()>;
 }
-impl<T: Read + WaitForEvent + SetBlockingMode> Reader for T {
+impl<T: Read + WaitForEvent> Reader for T {
 	fn read_oneshot(&mut self, buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
-		// Make nonblocking
-		try_err!(self.make_nonblocking());
-		
 		// Immediately return if we should not read any bytes
 		if buffer.remaining() == 0 { return Ok(()) }
 		

@@ -13,5 +13,5 @@ fn test_event_select_err() {
 		Event::Read | Event::Error,
 		Duration::from_secs(1).as_ms()
 	) };
-	assert!(result & Event::SelectError)
+	assert!(result & Event::SyscallError)
 }

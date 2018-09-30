@@ -6,12 +6,12 @@ use std::{
 };
 
 
-/// A trait for elements that contains a DNS-resolvable address
+/// A trait for elements which contain a DNS-resolvable address
 pub trait DnsResolvable {
 	/// Resolves a domain-name or IP-address
 	///
-	/// __Warning: because `getaddrinfo` only provides a synchronously API, we have to resolve in a
-	/// background-thread. This means the background-thread may outlive this call until the OS'
+	/// __Warning: because `getaddrinfo` only provides a synchronous API, we have to resolve in a
+	/// background thread. This means the background thread may outlive this call until the OS'
 	/// `connect`-timeout is reached.__
 	///
 	/// _Important: If you want to resolve an address like "localhost" or "crates.io" you __must__
@@ -52,7 +52,7 @@ impl<T: ToString> DnsResolvable for T {
 
 
 
-/// A trait for elements that contain a parseable IP-address
+/// A trait for elements which can be parsed to an IP-address
 pub trait IpParseable {
 	/// Parses an IP-address
 	///

@@ -1,3 +1,19 @@
+//! # About
+//! This library provides a simple timeout-based API for IO-operations.
+//!
+//! It provides the following features:
+//!  - DNS-resolution (currently uses a background-thread)
+//!  - TCP-accept (uses libselect)
+//!  - TCP-read/read-until/write (uses libselect)
+//!  - StdIOE-read/read-write/write (uses libselect)
+//!  - UDP-receive/send (uses libselect)
+//!
+//! All functions are defined as traits, so that you can easily wrap your own IO-channels without breaking compatibility.
+//!
+//! _Note: We currently do not provide a function for timeout-based `connect`-calls; use
+//! `std::net::TcpStream::connect_timeout` for TCP-connections or build sth. using `io::libselect` (and feel free to commit
+//! if you do so 😇)_
+
 #[macro_use] extern crate etrace;
 #[macro_use] extern crate tiny_future;
 extern crate slice_queue;
@@ -11,7 +27,7 @@ mod resolver;
 
 pub use slice_queue::SliceQueue;
 pub use self::{
-	event::{ RawFd, SetBlockingMode, WaitForEvent, Event, libselect },
+	event::{ RawFd, WaitForEvent, Event, libselect },
 	reader::Reader,
 	writer::Writer,
 	acceptor::Acceptor,
@@ -45,6 +61,7 @@ impl From<StdIoError> for IoError {
 pub type Result<T> = std::result::Result<T, etrace::Error<IoError>>;
 
 
+/// Extends `std::time::Instant`
 pub trait InstantExt {
 	/// Computes the remaining time underflow-safe
 	///
@@ -58,6 +75,7 @@ impl InstantExt for Instant {
 			else { self - now }
 	}
 }
+/// Extends `std::time::Duration`
 pub trait DurationExt {
 	/// The duration in milliseconds
 	///

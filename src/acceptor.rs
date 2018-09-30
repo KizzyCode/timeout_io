@@ -1,4 +1,4 @@
-use super::{ IoError, Result, InstantExt, WaitForEvent, SetBlockingMode };
+use super::{ IoError, Result, InstantExt, WaitForEvent };
 use std::{
 	time::{ Duration, Instant },
 	net::{ TcpListener, TcpStream }
@@ -9,9 +9,6 @@ use std::{
 pub trait Acceptor<T> {
 	/// Accepts a type-`T`-connection
 	///
-	/// __Warning: In most cases, `self` will be switched into nonblocking mode. It's up to you to
-	/// restore the previous mode if necessary.__
-	///
 	/// Parameters:
 	///  - `timeout`: The time to wait for a connection
 	///
@@ -20,9 +17,6 @@ pub trait Acceptor<T> {
 }
 impl Acceptor<TcpStream> for TcpListener {
 	fn accept(&self, timeout: Duration) -> Result<TcpStream> {
-		// Make nonblocking
-		try_err!(self.make_nonblocking());
-		
 		// Compute timeout-point and try to accept once until the timeout occurred
 		let timeout_point = Instant::now() + timeout;
 		loop {
