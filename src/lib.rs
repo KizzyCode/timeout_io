@@ -14,9 +14,9 @@
 //! `std::net::TcpStream::connect_timeout` for TCP-connections or build sth. using `io::libselect` (and feel free to commit
 //! if you do so 😇)_
 
-#[macro_use] extern crate etrace;
+#[macro_use] pub extern crate etrace;
 #[macro_use] extern crate tiny_future;
-extern crate slice_queue;
+pub extern crate slice_queue;
 
 mod event;
 mod reader;
