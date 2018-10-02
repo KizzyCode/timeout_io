@@ -1,8 +1,25 @@
 use super::{ IoError, Result, InstantExt, WaitForEvent };
 use std::{
-	time::{ Duration, Instant },
-	net::{ TcpListener, TcpStream }
+	io::Result as IoResult, time::{ Duration, Instant }, net::{ TcpListener, TcpStream }
 };
+
+
+/// A private trait wrapping the standard library's acceptors
+#[doc(hidden)]
+pub trait StdAcceptor<T> where Self: WaitForEvent {
+	fn accept(&self) -> IoResult<T>;
+}
+impl StdAcceptor<TcpStream> for TcpListener {
+	fn accept(&self) -> IoResult<TcpStream> {
+		Ok(TcpListener::accept(self)?.0)
+	}
+}
+#[cfg(unix)]
+impl StdAcceptor<::std::os::unix::net::UnixStream> for ::std::os::unix::net::UnixListener {
+	fn accept(&self) -> IoResult<::std::os::unix::net::UnixStream> {
+		Ok(::std::os::unix::net::UnixListener::accept(self)?.0)
+	}
+}
 
 
 /// A trait for accepting elements, e.g. a TCP-listener
@@ -18,8 +35,8 @@ pub trait Acceptor<T> {
 	/// Returns either __the accepted connection__ or a corresponding `IoError`
 	fn accept(&self, timeout: Duration) -> Result<T>;
 }
-impl Acceptor<TcpStream> for TcpListener {
-	fn accept(&self, timeout: Duration) -> Result<TcpStream> {
+impl<T, U> Acceptor<U> for T where T: StdAcceptor<U> {
+	fn accept(&self, timeout: Duration) -> Result<U> {
 		// Make the socket non-blocking
 		try_err!(self.set_blocking_mode(false));
 		
@@ -30,8 +47,8 @@ impl Acceptor<TcpStream> for TcpListener {
 			try_err!(self.wait_until_readable(timeout_point.remaining()));
 			
 			// Accept connection
-			match self.accept() {
-				Ok(connection) => return Ok(connection.0),
+			match StdAcceptor::accept(self) {
+				Ok(connection) => return Ok(connection),
 				Err(error) => {
 					let error = IoError::from(error);
 					if error.non_recoverable { throw_err!(error) }
