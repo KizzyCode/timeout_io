@@ -1,16 +1,14 @@
-extern crate gcc;
+extern crate cc;
 
 fn main() {
-	// Compile libselect
-	let mut gcc = gcc::Build::new();
-	
-	// Compile lib
-	match true {
-		_ if cfg!(unix) => gcc.file("libselect/libselect_unix.c").compile("select"),
-		_ if cfg!(windows) => gcc.file("libselect/libselect_win.c").compile("select"),
+	// Select the version according to the current platform
+	let file = match true {
+		_ if cfg!(unix) => "libselect/libselect_unix.c",
+		_ if cfg!(windows) => "libselect/libselect_win.c",
 		_ => panic!("Unsupported platform for libselect")
-	}
+	};
 	
-	// Link lib
+	// Compile and link library
+	cc::Build::new().file(file).compile("select");
 	println!("cargo:rustc-link-lib=static=select");
 }
