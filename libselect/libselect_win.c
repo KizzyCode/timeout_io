@@ -38,10 +38,10 @@ int wait_for_event(uint64_t timeout_ms, uint64_t const* fds, uint8_t* events) {
 	FD_ZERO(&error_set);
 
 	// Prepare sets
-	int highest_fd = 0;
+	SOCKET highest_fd = 0;
 	for (size_t i = 0; fds[i] != INVALID_FD; i++) {
 		// Capture FD and event
-		int fd = (int)fds[i];
+		SOCKET fd = (SOCKET)fds[i];
 		uint8_t event = events[i];
 
 		// Insert FD into sets
@@ -59,12 +59,12 @@ int wait_for_event(uint64_t timeout_ms, uint64_t const* fds, uint8_t* events) {
 	timeout.tv_usec = ((long)timeout_ms % 1000) * 1000;
 
 	// Call select
-	if (select(highest_fd + 1, &read_set, &write_set, &error_set, &timeout) == -1) return WSAGetLastError();
+	if (select((int)highest_fd + 1, &read_set, &write_set, &error_set, &timeout) == -1) return WSAGetLastError();
 
 	// Check sets
 	for (size_t i = 0; fds[i] != INVALID_FD; i++) {
 		// Capture FD and set the event to `EVENT_NONE`
-		int fd = (int)fds[i];
+		SOCKET fd = (SOCKET)fds[i];
 		events[i] = EVENT_NONE;
 
 		// Check FDs for events
