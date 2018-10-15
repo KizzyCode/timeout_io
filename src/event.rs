@@ -1,8 +1,5 @@
-use super::{ Result, DurationExt };
-use std::{
-	self, time::Duration,
-	io::{ Error as IoError, ErrorKind as IoErrorKind }
-};
+use ::{ Result, DurationExt };
+use ::std::{ self, time::Duration, io::{ Error as IoError, ErrorKind as IoErrorKind } };
 
 
 /// Interface to `libselect`

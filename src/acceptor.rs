@@ -1,5 +1,5 @@
-use super::{ IoError, Result, InstantExt, WaitForEvent };
-use std::{
+use ::{ IoError, Result, InstantExt, WaitForEvent };
+use ::std::{
 	io::Result as IoResult, time::{ Duration, Instant }, net::{ TcpListener, TcpStream }
 };
 
@@ -26,8 +26,8 @@ impl StdAcceptor<::std::os::unix::net::UnixStream> for ::std::os::unix::net::Uni
 pub trait Acceptor<T> {
 	/// Accepts a type-`T`-connection
 	///
-	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary._
+	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary.__
 	///
 	/// Parameters:
 	///  - `timeout`: The time to wait for a connection

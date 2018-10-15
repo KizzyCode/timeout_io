@@ -1,5 +1,5 @@
-use super::{ IoError, Result, SliceQueue, ReadableSliceQueue, WriteableSliceQueue, InstantExt, WaitForEvent };
-use std::{ io::Read, time::{ Duration, Instant }, io::ErrorKind as IoErrorKind };
+use ::{ IoError, Result, InstantExt, WaitForEvent };
+use ::std::{ io::Read, time::{ Duration, Instant }, io::ErrorKind as IoErrorKind };
 
 
 /// A trait for reading with timeouts
@@ -13,18 +13,15 @@ pub trait Reader {
 	/// either one successful `read`-operation or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: This function allocates `buffer.remaining()` bytes, so please ensure that you've
-	/// set an acceptable limit.__
-	///
-	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary._
+	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary.__
 	///
 	/// Parameters:
 	///  - `buffer`: The buffer to write the data to
 	///  - `timeout`: The maximum time this function will wait for `self` to become readable
 	///
-	/// Returns either __nothing__ or a corresponding `IoError`
-	fn read_oneshot(&mut self, buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()>;
+	/// Returns either __the amount of bytes read__ or a corresponding `IoError`
+	fn read(&mut self, buffer: &mut[u8], timeout: Duration) -> Result<usize>;
 	
 	/// Reads until `buffer` has been filled completely
 	///
@@ -35,18 +32,15 @@ pub trait Reader {
 	/// `buffer` has been filled completely or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: The buffer is filled completely, so please ensure that you've set an acceptable
-	/// limit.__
-	///
-	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary._
+	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary.__
 	///
 	/// Parameters:
 	///  - `buffer`: The buffer to fill with data
 	///  - `timeout`: The maximum time this function will block
 	///
 	/// Returns either __nothing__ or a corresponding `IoError`
-	fn read_exact(&mut self, buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()>;
+	fn read_exact(&mut self, buffer: &mut[u8], timeout: Duration) -> Result<()>;
 	
 	/// Read until either `pattern` has been matched or `buffer` has been filled completely
 	///
@@ -54,11 +48,8 @@ pub trait Reader {
 	/// `pattern` has been matched or `buffer` has been filled completely or the `timeout` was hit
 	/// or a non-recoverable error occurred._
 	///
-	/// __Warning: The buffer may be filled completely, so please ensure that you've set an
-	/// acceptable limit.__
-	///
-	/// _Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary._
+	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
+	/// state if necessary.__
 	///
 	/// Parameters:
 	///  - `pattern`: The pattern up to which you want to read.
@@ -70,22 +61,21 @@ pub trait Reader {
 	///  - `Err(IOError(std::io::ErrorKind::NotFound))` if the buffer was filled completely without
 	///    a match or
 	///  - another corresponding `IoError`
-	fn read_until(&mut self, pattern: &[u8], buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()>;
+	fn read_until(&mut self, pattern: &[u8], buffer: &mut[u8], timeout: Duration) -> Result<usize>;
 }
 impl<T: Read + WaitForEvent> Reader for T {
-	fn read_oneshot(&mut self, buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+	fn read(&mut self, buffer: &mut[u8], timeout: Duration) -> Result<usize> {
 		// Make the socket non-blocking
 		try_err!(self.set_blocking_mode(false));
 		
 		// Immediately return if we should not read any bytes
-		if buffer.remaining() == 0 { return Ok(()) }
+		if buffer.len() == 0 { return Ok(0) }
 		
 		// Wait for read-event and read data
 		try_err!(self.wait_until_readable(timeout));
 		loop {
-			let remaining = buffer.remaining();
-			match buffer.push_in_place(remaining, |buffer| self.read(buffer)) {
-				Ok(bytes_read) => if bytes_read > 0 { return Ok(()) }
+			match self.read(buffer) {
+				Ok(bytes_read) => if bytes_read > 0 { return Ok(bytes_read) }
 					else { throw_err!(IoErrorKind::UnexpectedEof.into()) },
 				Err(error) => {
 					let error = IoError::from(error);
@@ -95,23 +85,21 @@ impl<T: Read + WaitForEvent> Reader for T {
 		}
 	}
 	
-	fn read_exact(&mut self, buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+	fn read_exact(&mut self, buffer: &mut[u8], timeout: Duration) -> Result<()> {
 		// Make the socket non-blocking
 		try_err!(self.set_blocking_mode(false));
 		
 		// Compute timeout-point and loop until buffer is filled completely
 		let timeout_point = Instant::now() + timeout;
-		while buffer.remaining() > 0 {
-			// Wait for read-event
+		
+		// Read loop
+		let mut total_read = 0;
+		while buffer.len() - total_read > 0 {
+			// Wait for read-event and read data
 			try_err!(self.wait_until_readable(timeout_point.remaining()));
-			
-			// Read data
-			let remaining = buffer.remaining();
-			match buffer.push_in_place(remaining, |buffer| self.read(buffer)) {
-				// (Partial-)read
-				Ok(bytes_read) =>
-					if bytes_read == 0 { throw_err!(IoErrorKind::UnexpectedEof.into()) },
-				// An error occurred
+			match self.read(&mut buffer[total_read..]) {
+				Ok(bytes_read) => if bytes_read > 0 { total_read += bytes_read }
+					else { throw_err!(IoErrorKind::UnexpectedEof.into()) },
 				Err(error) => {
 					let error = IoError::from(error);
 					if error.non_recoverable { throw_err!(error) }
@@ -121,21 +109,21 @@ impl<T: Read + WaitForEvent> Reader for T {
 		Ok(())
 	}
 	
-	fn read_until(&mut self, pattern: &[u8], buffer: &mut SliceQueue<u8>, timeout: Duration) -> Result<()> {
+	fn read_until(&mut self, pattern: &[u8], buffer: &mut[u8], timeout: Duration) -> Result<usize> {
 		// Compute timeout-point
 		let timeout_point = Instant::now() + timeout;
 		
 		// Compute timeout-point and loop until `data` has been filled
-		let mut byte_buffer = SliceQueue::with_limit(1);
-		while buffer.remaining() > 0 {
+		let mut total_read = 0;
+		while buffer.len() - total_read > 0 {
 			// Read next byte
-			{
-				try_err!(Reader::read_exact(self, &mut byte_buffer, timeout_point.remaining()));
-				buffer.push(byte_buffer.pop().unwrap()).unwrap();
-			}
+			try_err!(Reader::read_exact(self, &mut buffer[total_read .. total_read + 1], timeout_point.remaining()));
+			total_read += 1;
+			
 			// Check for pattern
-			let filled = buffer.len();
-			if filled >= pattern.len() && &buffer[filled - pattern.len() ..] == pattern { return Ok(()) }
+			if total_read >= pattern.len() && &buffer[total_read - pattern.len() .. total_read] == pattern {
+				return Ok(total_read)
+			}
 		}
 		throw_err!(IoErrorKind::NotFound.into())
 	}

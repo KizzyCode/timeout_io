@@ -1,6 +1,6 @@
 [package]
 name = "timeout_io"
-version = "0.2.8"
+version = "0.3.0"
 authors = ["KizzyCode Software Labs./Keziah Biermann <development@kizzycode.de>"]
 description = "This library provides a simple timeout-based API for IO-operations"
 license = "BSD-2-Clause OR MIT"
@@ -14,7 +14,6 @@ appveyor = { repository = "KizzyCode/timeout_io" }
 
 [dependencies]
 etrace = "1.1.1"
-slice_queue = "0.3.2"
 
 [build-dependencies]
 cc = "1.0.25"

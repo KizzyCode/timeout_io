@@ -15,7 +15,6 @@
 //! if you do so 😇)_
 
 #[macro_use] pub extern crate etrace;
-pub extern crate slice_queue;
 
 pub mod event;
 mod reader;
@@ -24,16 +23,15 @@ mod acceptor;
 mod resolver;
 
 
-pub use slice_queue::{ SliceQueue, ReadableSliceQueue, WriteableSliceQueue };
-pub use self::{
+pub use ::{
 	event::{ RawFd, WaitForEvent, Event },
 	reader::Reader,
 	writer::Writer,
 	acceptor::Acceptor,
 	resolver::{ DnsResolvable, IpParseable }
 };
-pub use std::io::ErrorKind as IoErrorKind;
-use std::{ io::Error as StdIoError, time::{ Duration, Instant } };
+pub use ::std::io::ErrorKind as IoErrorKind;
+use ::std::{ io::Error as StdIoError, time::{ Duration, Instant } };
 
 
 #[derive(Debug, Clone)]
