@@ -1,8 +1,9 @@
-use super::{ IoError, Result, tiny_future::{ Future, async } };
+use super::{ IoError, Result, InstantExt };
 use std::{
-	time::Duration, str::FromStr,
+	time::{ Duration, Instant },
 	net::{ SocketAddr, ToSocketAddrs },
-	io::ErrorKind as IoErrorKind
+	sync::mpsc::{ self, RecvTimeoutError },
+	io::ErrorKind as IoErrorKind, thread, str::FromStr
 };
 
 
@@ -25,28 +26,44 @@ pub trait DnsResolvable {
 }
 impl<T: ToString> DnsResolvable for T {
 	fn dns_resolve(&self, timeout: Duration) -> Result<SocketAddr> {
-		// Run resolver-job
+		enum Msg{ Result(Result<SocketAddr>), Ping }
+		
+		// Create address and channels
 		let address = self.to_string();
-		let fut = async(move |fut: Future<Result<SocketAddr>>| {
-			loop {
-				// Check for timeout
-				if !fut.is_waiting() { job_die!(fut) }
-				
-				// Resolve name
-				match address.as_str().to_socket_addrs() {
-					Ok(mut addresses) => if let Some(address) = addresses.next() { job_return!(fut, Ok(address)) }
-						else { job_return!(fut, Err(new_err!(IoErrorKind::NotFound.into()))) },
-					Err(error) => {
-						let io_error = IoError::from(error);
-						if io_error.non_recoverable { job_return!(fut, Err(new_err!(io_error))) }
-					}
-				};
+		let (sender, receiver) = mpsc::channel();
+		
+		// Run resolver task
+		thread::spawn(move || 'resolve_loop: loop {
+			// Check for timeout
+			if sender.send(Msg::Ping).is_err() { return }
+			
+			// Resolve name
+			let to_send = match address.as_str().to_socket_addrs() {
+				Ok(ref addresses) if (addresses as &ExactSizeIterator<Item = SocketAddr>).len() == 0 =>
+					Err(new_err!(IoErrorKind::NotFound.into())),
+				Ok(mut addresses) =>
+					Ok(addresses.next().unwrap()),
+				Err(error) => match IoError::from(error) {
+					ref e if !e.non_recoverable => continue 'resolve_loop,
+					e => Err(new_err!(e))
+				}
 			};
+			
+			// Send result
+			let _ = sender.send(Msg::Result(to_send));
+			return;
 		});
 		
 		// Wait for result
-		if let Ok(result) = fut.try_get_timeout(timeout) { result }
-			else { throw_err!(IoErrorKind::TimedOut.into()) }
+		let timeout_point = Instant::now() + timeout;
+		'receive_loop: loop {
+			match receiver.recv_timeout(timeout_point.remaining()) {
+				Ok(Msg::Result(result)) => return Ok(try_err!(result)),
+				Ok(Msg::Ping) => continue 'receive_loop,
+				Err(RecvTimeoutError::Timeout) => throw_err!(IoErrorKind::TimedOut.into()),
+				Err(_) => panic!("Resolver thread crashed without result")
+			}
+		}
 	}
 }
 

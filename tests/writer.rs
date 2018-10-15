@@ -1,37 +1,39 @@
-#[macro_use] extern crate tiny_future;
 extern crate slice_queue;
 extern crate timeout_io;
 
-use tiny_future::{ Future, async };
 use slice_queue::SliceQueue;
 use timeout_io::*;
 use std::{
-	thread, time::Duration,
+	thread, time::Duration, sync::mpsc::{ self, Receiver },
 	io::{ Read, Write }, net::{ TcpListener, TcpStream, Shutdown }
 };
 
 
-fn read_async(mut stream: impl 'static + Read + Send, to_read: usize) -> Future<Vec<u8>> {
-	async(move |fut| {
+fn read_async(mut stream: impl 'static + Read + Send, to_read: usize) -> Receiver<Vec<u8>> {
+	let (sender, receiver) = mpsc::channel();
+	thread::spawn(move || {
 		let mut buffer = vec![0u8; to_read];
 		stream.read_exact(&mut buffer).unwrap();
-		job_return!(fut, buffer);
-	})
+		sender.send(buffer).unwrap();
+	});
+	receiver
 }
 
 fn socket_pair() -> (TcpStream, TcpStream) {
 	// Create listener
-	let (listener, address): (Future<TcpStream>, _) = {
+	let (listener, address) = {
+		// Create listener (to capture the address) and channels
 		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 		let address = listener.local_addr().unwrap();
+		let (sender, receiver) = mpsc::channel();
 		
-		(async(move |fut: Future<TcpStream>| {
-			job_return!(fut, listener.accept().unwrap().0);
-		}), address)
+		// Listen in background
+		thread::spawn(move || sender.send(listener.accept().unwrap().0).unwrap());
+		(receiver, address)
 	};
 	
 	// Create and connect stream
-	(TcpStream::connect(address).unwrap(), listener.get().unwrap())
+	(TcpStream::connect(address).unwrap(), listener.recv().unwrap())
 }
 
 fn rand(min_len: usize) -> SliceQueue<u8> {
@@ -46,11 +48,11 @@ fn rand(min_len: usize) -> SliceQueue<u8> {
 #[test]
 fn test_write_oneshot_ok() {
 	let (mut s0, s1) = socket_pair();
-	let fut = read_async(s1, 9);
+	let async = read_async(s1, 9);
 	
 	let mut data = rand(9);
 	s0.write_oneshot(&mut data.clone(), Duration::from_secs(1)).unwrap();
-	assert_eq!(fut.get().unwrap(), data.pop_n(9).unwrap());
+	assert_eq!(async.recv().unwrap(), data.pop_n(9).unwrap());
 }
 #[test] #[ignore]
 fn test_write_oneshot_err_broken_pipe() {
@@ -111,10 +113,10 @@ fn test_write_exact_ok() {
 	let (mut s0, s1) = socket_pair();
 	
 	let data = rand(64 * 1024 * 1024);
-	let fut = read_async(s1, data.len());
+	let async = read_async(s1, data.len());
 	
 	s0.write_exact(&mut data.clone(), Duration::from_secs(4)).unwrap();
-	assert_eq!(fut.get().unwrap(), &data[..])
+	assert_eq!(async.recv().unwrap(), &data[..])
 }
 #[test]
 fn test_write_exact_err() {

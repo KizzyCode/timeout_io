@@ -1,38 +1,92 @@
 use super::{ Result, DurationExt };
 use std::{
 	self, time::Duration,
-	io::{ Error as StdIoError, ErrorKind as IoErrorKind },
-	ops::{ BitOr, BitAnd }
+	io::{ Error as IoError, ErrorKind as IoErrorKind }
 };
 
 
 /// Interface to `libselect`
-pub mod libselect {
+mod libselect {
 	use std::os::raw::c_int;
 	extern {
-		pub fn wait_for_event(descriptor: u64, event_mask: u8, timeout_ms: u64) -> u8;
-		pub fn set_blocking_mode(descriptor: u64, blocking: c_int) -> u8;
-		pub fn get_errno() -> c_int;
+		pub static EVENT_READ:  u8;
+		pub static EVENT_WRITE: u8;
+		pub static EVENT_ERROR: u8;
+		pub static INVALID_FD:  u64;
+		
+		pub fn wait_for_event(timeout_ms: u64, fds: *const u64, events: *mut u8) -> c_int;
+		pub fn set_blocking_mode(descriptor: u64, blocking: u8) -> c_int;
 	}
 }
-/// An event returned by `libselect`'s `wait_for_event`
-#[repr(u8)]
-pub enum Event {
-	Read  = 1 << 1, // const uint8_t EVENT_READ   = 1 << 1;
-	Write = 1 << 2, // const uint8_t EVENT_WRITE  = 1 << 2;
-	Error = 1 << 3, // const uint8_t EVENT_ERROR  = 1 << 3;
-	SyscallError = 1 << 7 // const uint8_t SYSCALL_ERROR = 1 << 7;
+/// A struct describing null or more IO-events
+#[derive(Copy, Clone, Default)]
+pub struct Event {
+	raw: u8
 }
-impl BitOr for Event {
-	type Output = u8;
-	fn bitor(self, rhs: Self) -> Self::Output {
-		(self as u8) | (rhs as u8)
+impl Event {
+	#[doc(hidden)]
+	/// Sets the event to a `libselect` raw value
+	///
+	/// __Warning: This function panics on an invalid `raw` value.__
+	///
+	/// Parameters:
+	///  - `raw`: The `libselect` raw event value
+	///
+	/// Returns _a mutable reference to `self`_ to allow chaining
+	pub fn set_raw(&mut self, raw: u8) -> &mut Self {
+		if raw & !(Self::r() | Self::w() | Self::e()) != 0 { panic!("Invalid raw event {:08b}", raw) }
+		self.raw = raw;
+		self
 	}
-}
-impl BitAnd<Event> for u8 {
-	type Output = bool;
-	fn bitand(self, rhs: Event) -> Self::Output {
-		self & (rhs as u8) != 0
+	#[doc(hidden)]
+	/// The event's `libselect` raw value
+	pub fn raw(&self) -> u8 {
+		self.raw
+	}
+	
+	/// Adds the read-event to `self`
+	///
+	/// Returns _a mutable reference to `self`_ to allow chaining
+	pub fn add_r(&mut self) -> &mut Self {
+		self.raw |= Self::r();
+		self
+	}
+	/// Adds the write-event to `self`
+	///
+	/// Returns _a mutable reference to `self`_ to allow chaining
+	pub fn add_w(&mut self) -> &mut Self {
+		self.raw |= Self::w();
+		self
+	}
+	/// Adds the error-event to `self`
+	///
+	/// Returns _a mutable reference to `self`_ to allow chaining
+	pub fn add_e(&mut self) -> &mut Self {
+		self.raw |= Self::e();
+		self
+	}
+	
+	/// Checks if `self` contains a read event
+	pub fn is_r(&self) -> bool {
+		self.raw & Self::r() != 0
+	}
+	/// Checks if `self` contains a write event
+	pub fn is_w(&self) -> bool {
+		self.raw & Self::w() != 0
+	}
+	/// Checks if `self` contains a error event
+	pub fn is_e(&self) -> bool {
+		self.raw & Self::e() != 0
+	}
+	
+	fn r() -> u8 {
+		unsafe{ libselect::EVENT_READ }
+	}
+	fn w() -> u8 {
+		unsafe{ libselect::EVENT_WRITE }
+	}
+	fn e() -> u8 {
+		unsafe{ libselect::EVENT_ERROR }
 	}
 }
 
@@ -50,6 +104,36 @@ impl<T: std::os::unix::io::AsRawFd> RawFd for T {
 #[cfg(windows)]
 impl<T: std::os::windows::io::AsRawSocket> RawFd for T {
 	fn raw_fd(&self) -> u64 { self.as_raw_socket() as u64 }
+}
+
+
+/// Waits on multiple handles until an event occurrs or `timeout` was reached
+///
+/// Parameters:
+///  - `handles`: A list of `(handle, event)`-pairs that contains the handles and the corresponding
+///    events to wait for. If a matching event occurrs on a handle, the corresponding event struct
+///    will be modified to reflect the event that occurred.
+///  - `timeout`: The maximum amount of time this function will wait for an event
+///
+/// Returns either __nothing__ or a corresponding `IoError`
+pub fn wait_multiple<'a>(mut handles: impl AsMut<[(&'a RawFd, &'a mut Event)]> + 'a, timeout: Duration) -> Result<()> {
+	// Extract raw FDs and events
+	let (mut fds, mut events): (Vec<u64>, Vec<u8>) = (Vec::new(), Vec::new());
+	for (handle, event) in handles.as_mut() {
+		fds.push(handle.raw_fd());
+		events.push(event.raw());
+	}
+	fds.push(unsafe{ libselect::INVALID_FD });
+	
+	// Call libselect
+	let result = unsafe{ libselect::wait_for_event(
+		timeout.as_ms(), fds.as_ptr(), events.as_mut_ptr()
+	) };
+	if result != 0 { throw_err!(IoError::from_raw_os_error(result).into()) }
+	
+	// Copy events
+	for i in 0..handles.as_mut().len() { handles.as_mut()[i].1.set_raw(events[i]); }
+	Ok(())
 }
 
 
@@ -80,42 +164,24 @@ pub trait WaitForEvent {
 }
 impl<T: RawFd> WaitForEvent for T {
 	fn wait_until_readable(&self, timeout: Duration) -> Result<()> {
-		// Wait for event
-		let result = unsafe{ libselect::wait_for_event(
-			self.raw_fd(),
-			Event::Read | Event::Error,
-			timeout.as_ms()
-		) };
-		// Read result
-		match result {
-			r if r & Event::SyscallError => throw_err!(StdIoError::from_raw_os_error(unsafe{ libselect::get_errno() }).into()),
-			r if r & Event::Read => Ok(()),
-			_ => throw_err!(IoErrorKind::TimedOut.into())
-		}
+		let mut event: Event = *Event::default().add_r().add_e();
+		try_err!(wait_multiple([(self as &RawFd, &mut event)], timeout));
+		
+		if !(event.is_r() | event.is_e()) { throw_err!(IoErrorKind::TimedOut.into()) }
+			else { Ok(()) }
 	}
 	fn wait_until_writeable(&self, timeout: Duration) -> Result<()> {
-		// Wait for event
-		let result = unsafe{ libselect::wait_for_event(
-			self.raw_fd(),
-			Event::Write | Event::Error,
-			timeout.as_ms()
-		) };
-		// Read result
-		match result {
-			r if r & Event::SyscallError => throw_err!(StdIoError::from_raw_os_error(unsafe{ libselect::get_errno() }).into()),
-			r if r & Event::Write => Ok(()),
-			_ => throw_err!(IoErrorKind::TimedOut.into())
-		}
+		let mut event: Event = *Event::default().add_w().add_e();
+		try_err!(wait_multiple([(self as &RawFd, &mut event)], timeout));
+		
+		if !(event.is_w() | event.is_e()) { throw_err!(IoErrorKind::TimedOut.into()) }
+			else { Ok(()) }
 	}
 	fn set_blocking_mode(&self, blocking: bool) -> Result<()> {
 		let result = unsafe{ libselect::set_blocking_mode(
-			self.raw_fd(),
-			if blocking { 1 } else { 0 }
+			self.raw_fd(), if blocking { 1 } else { 0 }
 		) };
-		match result {
-			0 => Ok(()),
-			r if r & Event::SyscallError => throw_err!(StdIoError::from_raw_os_error(unsafe{ libselect::get_errno() }).into()),
-			_ => unreachable!()
-		}
+		if result != 0 { throw_err!(IoError::from_raw_os_error(result).into()) }
+			else { Ok(()) }
 	}
 }

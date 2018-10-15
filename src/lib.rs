@@ -15,10 +15,9 @@
 //! if you do so 😇)_
 
 #[macro_use] pub extern crate etrace;
-#[macro_use] extern crate tiny_future;
 pub extern crate slice_queue;
 
-mod event;
+pub mod event;
 mod reader;
 mod writer;
 mod acceptor;
@@ -27,7 +26,7 @@ mod resolver;
 
 pub use slice_queue::{ SliceQueue, ReadableSliceQueue, WriteableSliceQueue };
 pub use self::{
-	event::{ RawFd, WaitForEvent, Event, libselect },
+	event::{ RawFd, WaitForEvent, Event },
 	reader::Reader,
 	writer::Writer,
 	acceptor::Acceptor,
@@ -47,7 +46,7 @@ impl From<IoErrorKind> for IoError {
 	fn from(kind: IoErrorKind) -> Self {
 		match kind {
 			IoErrorKind::Interrupted => IoError { kind: IoErrorKind::Interrupted, non_recoverable: false },
-			IoErrorKind::TimedOut => IoError { kind: IoErrorKind::TimedOut, non_recoverable: false },
+			IoErrorKind::TimedOut | IoErrorKind::WouldBlock => IoError { kind: IoErrorKind::TimedOut, non_recoverable: false },
 			other => Self{ kind: other, non_recoverable: true }
 		}
 	}

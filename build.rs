@@ -9,6 +9,10 @@ fn main() {
 	};
 	
 	// Compile and link library
-	cc::Build::new().file(file).compile("select");
+	cc::Build::new()
+		.static_flag(true)
+		.extra_warnings(true)
+		.warnings_into_errors(true)
+		.file(file).compile("select");
 	println!("cargo:rustc-link-lib=static=select");
 }

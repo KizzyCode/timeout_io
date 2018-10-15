@@ -1,12 +1,10 @@
-#[macro_use] extern crate tiny_future;
 extern crate slice_queue;
 extern crate timeout_io;
 
-use tiny_future::{ Future, async };
 use slice_queue::SliceQueue;
 use timeout_io::*;
 use std::{
-	time::Duration, thread, io::Write,
+	time::Duration, thread, io::Write, sync::mpsc,
 	net::{ TcpListener, TcpStream }
 };
 
@@ -20,17 +18,19 @@ fn write_delayed(mut stream: impl 'static + Write + Send, data: &'static [u8], d
 
 fn socket_pair() -> (TcpStream, TcpStream) {
 	// Create listener
-	let (listener, address): (Future<TcpStream>, _) = {
+	let (listener, address) = {
+		// Create listener (to capture the address) and channels
 		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 		let address = listener.local_addr().unwrap();
+		let (sender, receiver) = mpsc::channel();
 		
-		(async(move |fut: Future<TcpStream>| {
-			job_return!(fut, listener.accept().unwrap().0);
-		}), address)
+		// Listen in background
+		thread::spawn(move || sender.send(listener.accept().unwrap().0).unwrap());
+		(receiver, address)
 	};
 	
 	// Create and connect stream
-	(TcpStream::connect(address).unwrap(), listener.get().unwrap())
+	(TcpStream::connect(address).unwrap(), listener.recv().unwrap())
 }
 
 
