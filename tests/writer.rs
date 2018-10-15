@@ -36,11 +36,16 @@ fn socket_pair() -> (TcpStream, TcpStream) {
 	(TcpStream::connect(address).unwrap(), listener.recv().unwrap())
 }
 
-fn rand(min_len: usize) -> SliceQueue<u8> {
+fn rand(len: usize) -> SliceQueue<u8> {
 	let block: &[u8] = include_bytes!("rand.dat");
 	
+	// Accumulate random data
 	let mut slice_queue = SliceQueue::new();
-	while slice_queue.len() < min_len { slice_queue.push_from(block).unwrap() }
+	while slice_queue.len() < len { slice_queue.push_from(block).unwrap() }
+	
+	// Drop superflous bytes
+	let to_drop = slice_queue.len() - len;
+	slice_queue.drop_n(to_drop).unwrap();
 	slice_queue
 }
 
