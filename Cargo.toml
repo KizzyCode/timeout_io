@@ -1,6 +1,6 @@
 [package]
 name = "timeout_io"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["KizzyCode Software Labs./Keziah Biermann <development@kizzycode.de>"]
 description = "This library provides a simple timeout-based API for IO-operations"
 license = "BSD-2-Clause OR MIT"
