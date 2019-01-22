@@ -1,10 +1,11 @@
-use ::{ IoError, Result, InstantExt, WaitForEvent };
-use ::std::{ io::{ Write, ErrorKind as IoErrorKind }, time::{ Duration, Instant } };
+use crate::{ TimeoutIoError, InstantExt, WaitForEvent, EventMask };
+use std::{ io::Write, time::{ Duration, Instant } };
 
 
 /// A trait for writing with timeouts
 pub trait Writer {
-	/// Executes _one_ `write`-operation to write _as much bytes as possible_ from `data`
+	/// Executes _one_ `write`-operation to write _as much bytes as possible_ from `data` and
+	/// returns the amount of bytes written
 	///
 	/// This is especially useful in packet-based contexts where `write`-operations are atomic (like
 	/// in UDP)
@@ -15,13 +16,7 @@ pub trait Writer {
 	///
 	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
 	/// state if necessary.__
-	///
-	/// Parameters:
-	///  - `data`: The data to write
-	///  - `timeout`: The maximum time this function will wait for `self` to become writeable
-	///
-	/// Returns either __the amount of bytes written__ or a corresponding `IoError`
-	fn write(&mut self, data: &[u8], timeout: Duration) -> Result<usize>;
+	fn write(&mut self, data: &[u8], timeout: Duration) -> Result<usize, TimeoutIoError>;
 	
 	/// Writes all bytes in `data`
 	///
@@ -34,55 +29,48 @@ pub trait Writer {
 	///
 	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
 	/// state if necessary.__
-	///
-	/// Parameters:
-	///  - `data`: The data to write
-	///  - `timeout`: The maximum time this function will wait for `self` to become writeable
-	///
-	/// Returns either __nothing__ or a corresponding `IoError`
-	fn write_exact(&mut self, data: &[u8], timeout: Duration) -> Result<()>;
+	fn write_exact(&mut self, data: &[u8], timeout: Duration) -> Result<(), TimeoutIoError>;
 }
 impl<T: Write + WaitForEvent> Writer for T {
-	fn write(&mut self, data: &[u8], timeout: Duration) -> Result<usize> {
+	fn write(&mut self, data: &[u8], timeout: Duration) -> Result<usize, TimeoutIoError> {
 		// Make the socket non-blocking
-		try_err!(self.set_blocking_mode(false));
+		self.set_blocking_mode(false)?;
 		
-		// Immediately return if we should not read any bytes
+		// Immediately return if we should not write any bytes
 		if data.is_empty() { return Ok(0) }
 		
 		// Wait for write-events and write data
 		let timeout_point = Instant::now() + timeout;
 		loop {
-			try_err!(self.wait_until_writeable(timeout_point.remaining()));
+			self.wait_for_event(EventMask::new_w(),timeout_point.remaining())?;
 			match self.write(data) {
-				Ok(bytes_written) => if bytes_written > 0 { return Ok(bytes_written) }
-					else { throw_err!(IoErrorKind::UnexpectedEof.into()) },
+				Ok(0) => return Err(TimeoutIoError::UnexpectedEof),
+				Ok(bytes_written) => return Ok(bytes_written),
 				Err(error) => {
-					let error = IoError::from(error);
-					if error.non_recoverable { throw_err!(error) }
+					let error = TimeoutIoError::from(error);
+					if !error.should_retry() { return Err(error) }
 				}
 			}
 		}
 	}
 	
-	fn write_exact(&mut self, mut data: &[u8], timeout: Duration) -> Result<()> {
+	fn write_exact(&mut self, mut data: &[u8], timeout: Duration) -> Result<(), TimeoutIoError> {
 		// Make the socket non-blocking
-		try_err!(self.set_blocking_mode(false));
+		self.set_blocking_mode(false)?;
 		
 		// Compute timeout-point and loop until data is empty
 		let timeout_point = Instant::now() + timeout;
 		while !data.is_empty() {
 			// Wait for write-event
-			try_err!(self.wait_until_writeable(timeout_point.remaining()));
+			self.wait_for_event(EventMask::new_w(), timeout_point.remaining())?;
 			
 			// Write data
 			match self.write(data) {
-				// (Partial-)write
+				Ok(0) => return Err(TimeoutIoError::UnexpectedEof),
 				Ok(bytes_written) => data = &data[bytes_written..],
-				// An error occurred
 				Err(error) => {
-					let error = IoError::from(error);
-					if error.non_recoverable { throw_err!(error) }
+					let error = TimeoutIoError::from(error);
+					if !error.should_retry() { return Err(error) }
 				}
 			}
 		}

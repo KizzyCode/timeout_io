@@ -1,5 +1,3 @@
-extern crate timeout_io;
-
 use timeout_io::*;
 use std::{
 	thread, time::Duration, io::Read,
@@ -50,11 +48,11 @@ fn rand(len: usize) -> Vec<u8> {
 #[test]
 fn test_write_oneshot_ok() {
 	let (mut s0, s1) = socket_pair();
-	let async = read_async(s1, 9);
+	let fut = read_async(s1, 9);
 	
 	let data = rand(9);
 	s0.write(&mut data.clone(), Duration::from_secs(1)).unwrap();
-	assert_eq!(async.recv().unwrap(), data);
+	assert_eq!(fut.recv().unwrap(), data);
 }
 #[test] #[ignore]
 fn test_write_oneshot_err_broken_pipe() {
@@ -67,8 +65,8 @@ fn test_write_oneshot_err_broken_pipe() {
 	thread::sleep(Duration::from_secs(90));
 	let mut data = rand(16 * 1024 * 1024);
 	assert_eq!(
-		s0.write(&mut data, Duration::from_secs(1)).unwrap_err().kind.kind,
-		IoErrorKind::BrokenPipe
+		s0.write(&mut data, Duration::from_secs(1)).unwrap_err(),
+		TimeoutIoError::ConnectionLost
 	)
 }
 #[test]
@@ -77,15 +75,16 @@ fn test_write_oneshot_err() {
 	s0.shutdown(Shutdown::Both).unwrap();
 	
 	let mut data = rand(16 * 1024 * 1024);
+	let err = s0.write(&mut data, Duration::from_secs(1)).unwrap_err();
 	
-	assert_eq!(
-		s0.write(&mut data, Duration::from_secs(1)).unwrap_err().kind.kind,
-		match true {
-			_ if cfg!(unix) => IoErrorKind::BrokenPipe,
-			_ if cfg!(windows) => IoErrorKind::Other,
-			_ => panic!("Unsupported platform")
-		}
-	);
+	#[cfg(unix)]
+	assert_eq!(err, TimeoutIoError::ConnectionLost);
+	
+	#[cfg(windows)]
+	match err {
+		TimeoutIoError::Other{ .. } => (),
+		err => panic!("Invalid error returned: {:?}", err)
+	}
 }
 #[test]
 fn test_write_oneshot_timeout() {
@@ -96,7 +95,7 @@ fn test_write_oneshot_timeout() {
 	loop {
 		let mut data = rand(64 * 1024 * 1024);
 		if let Err(e) = s0.write(&mut data, Duration::from_secs(1)) {
-			if e.kind.kind == IoErrorKind::TimedOut { break }
+			if e == TimeoutIoError::TimedOut { break }
 				else { panic!(e) }
 		}
 	}
@@ -104,8 +103,8 @@ fn test_write_oneshot_timeout() {
 	// Final test
 	let mut data = rand(64 * 1024 * 1024);
 	assert_eq!(
-		s0.write(&mut data, Duration::from_secs(1)).unwrap_err().kind.kind,
-		IoErrorKind::TimedOut
+		s0.write(&mut data, Duration::from_secs(1)).unwrap_err(),
+		TimeoutIoError::TimedOut
 	)
 }
 
@@ -115,10 +114,10 @@ fn test_write_exact_ok() {
 	let (mut s0, s1) = socket_pair();
 	
 	let data = rand(64 * 1024 * 1024);
-	let async = read_async(s1, data.len());
+	let fut = read_async(s1, data.len());
 	
 	s0.write_exact(&mut data.clone(), Duration::from_secs(4)).unwrap();
-	assert_eq!(async.recv().unwrap(), &data[..])
+	assert_eq!(fut.recv().unwrap(), data)
 }
 #[test]
 fn test_write_exact_err() {
@@ -126,15 +125,18 @@ fn test_write_exact_err() {
 	s0.shutdown(Shutdown::Both).unwrap();
 	
 	let data = rand(64 * 1024 * 1024);
+	let err = s0
+		.write_exact(&mut data.clone(), Duration::from_secs(4))
+		.unwrap_err();
 	
-	assert_eq!(
-		s0.write_exact(&mut data.clone(), Duration::from_secs(4)).unwrap_err().kind.kind,
-		match true {
-			_ if cfg!(unix) => IoErrorKind::BrokenPipe,
-			_ if cfg!(windows) => IoErrorKind::Other,
-			_ => panic!("Unsupported platform")
-		}
-	);
+	#[cfg(unix)]
+	assert_eq!(err, TimeoutIoError::ConnectionLost);
+	
+	#[cfg(windows)]
+		match err {
+		TimeoutIoError::Other{ .. } => (),
+		err => panic!("Invalid error returned: {:?}", err)
+	}
 }
 #[test] #[ignore]
 fn test_write_exact_timeout() {
@@ -142,7 +144,7 @@ fn test_write_exact_timeout() {
 	
 	let data = rand(64 * 1024 * 1024);
 	assert_eq!(
-		s0.write_exact(&mut data.clone(), Duration::from_secs(1)).unwrap_err().kind.kind,
-		IoErrorKind::TimedOut
+		s0.write_exact(&mut data.clone(), Duration::from_secs(1)).unwrap_err(),
+		TimeoutIoError::TimedOut
 	)
 }

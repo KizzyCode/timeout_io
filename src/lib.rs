@@ -8,61 +8,75 @@
 //!  - StdIOE-read/read-write/write (uses libselect)
 //!  - UDP-receive/send (uses libselect)
 //!
-//! All functions are defined as traits, so that you can easily wrap your own IO-channels without breaking compatibility.
+//! All functions are defined as traits, so that you can easily wrap your own IO-channels without
+//! breaking compatibility.
 //!
 //! _Note: We currently do not provide a function for timeout-based `connect`-calls; use
-//! `std::net::TcpStream::connect_timeout` for TCP-connections or build sth. using `io::libselect` (and feel free to commit
-//! if you do so 😇)_
+//! `std::net::TcpStream::connect_timeout` for TCP-connections or build sth. using `io::libselect`
+//! (and feel free to commit if you do so 😇)_
 
-#[macro_use] pub extern crate etrace;
 
-pub mod event;
+// Mods
+mod event;
 mod reader;
 mod writer;
 mod acceptor;
 mod resolver;
 
 
-pub use ::{
-	event::{ RawFd, WaitForEvent, Event },
-	reader::Reader,
-	writer::Writer,
-	acceptor::Acceptor,
+// Create re-exports
+pub use crate::{
+	acceptor::Acceptor, reader::Reader, writer::Writer,
+	event::{ RawFd, EventMask, SelectSet, WaitForEvent },
 	resolver::{ DnsResolvable, IpParseable }
 };
-pub use ::std::io::ErrorKind as IoErrorKind;
-use ::std::{ io::Error as StdIoError, time::{ Duration, Instant } };
+use std::{
+	fmt::{ Display, Formatter, Result as FmtResult }, time::{ Duration, Instant },
+	io::{ Error as StdIoError, ErrorKind as IoErrorKind }
+};
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 /// An IO-error-wrapper
-pub struct IoError {
-	pub kind: IoErrorKind,
-	pub non_recoverable: bool
+pub enum TimeoutIoError {
+	InterruptedSyscall,
+	TimedOut,
+	UnexpectedEof,
+	ConnectionLost,
+	NotFound,
+	InvalidInput,
+	Other{ desc: String }
 }
-impl From<IoErrorKind> for IoError {
-	fn from(kind: IoErrorKind) -> Self {
-		match kind {
-			IoErrorKind::Interrupted => IoError { kind: IoErrorKind::Interrupted, non_recoverable: false },
-			IoErrorKind::TimedOut | IoErrorKind::WouldBlock => IoError { kind: IoErrorKind::TimedOut, non_recoverable: false },
-			other => Self{ kind: other, non_recoverable: true }
+impl TimeoutIoError {
+	pub fn should_retry(&self) -> bool {
+		match self {
+			TimeoutIoError::InterruptedSyscall | TimeoutIoError::TimedOut => true,
+			_ => false
 		}
 	}
 }
-impl From<StdIoError> for IoError {
-	fn from(error: StdIoError) -> Self {
-		error.kind().into()
+impl Display for TimeoutIoError {
+	fn fmt(&self, f: &mut Formatter) -> FmtResult {
+		write!(f, "{:?}", self)
 	}
 }
-/// Syntactic sugar for `std::result::Result<T, etrace::Error<IoError>>`
-pub type Result<T> = std::result::Result<T, etrace::Error<IoError>>;
+impl From<StdIoError> for TimeoutIoError {
+	fn from(error: StdIoError) -> Self {
+		match error.kind() {
+			IoErrorKind::Interrupted => TimeoutIoError::InterruptedSyscall,
+			IoErrorKind::TimedOut | IoErrorKind::WouldBlock => TimeoutIoError::TimedOut,
+			IoErrorKind::UnexpectedEof => TimeoutIoError::UnexpectedEof,
+			IoErrorKind::BrokenPipe | IoErrorKind::ConnectionAborted | IoErrorKind::ConnectionReset
+				=> TimeoutIoError::ConnectionLost,
+			_ => TimeoutIoError::Other{ desc: format!("{:#?}", error) }
+		}
+	}
+}
 
 
 /// Extends `std::time::Instant`
 pub trait InstantExt {
 	/// Computes the remaining time underflow-safe
-	///
-	/// Returns __the remaining time__
 	fn remaining(self) -> Duration;
 }
 impl InstantExt for Instant {
@@ -75,8 +89,6 @@ impl InstantExt for Instant {
 /// Extends `std::time::Duration`
 pub trait DurationExt {
 	/// The duration in milliseconds
-	///
-	/// Returns __`self` as milliseconds__
 	fn as_ms(&self) -> u64;
 }
 impl DurationExt for Duration {

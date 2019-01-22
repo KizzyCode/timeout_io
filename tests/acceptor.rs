@@ -1,4 +1,3 @@
-extern crate timeout_io;
 use timeout_io::*;
 use std::{ time::Duration, thread, net::{ TcpListener, TcpStream } };
 
@@ -18,7 +17,7 @@ fn test_accept_ok() {
 fn test_accept_timeout() {
 	let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 	assert_eq!(
-		Acceptor::accept(&listener, Duration::from_secs(4)).unwrap_err().kind.kind,
-		IoErrorKind::TimedOut
+		Acceptor::accept(&listener, Duration::from_secs(4)).unwrap_err(),
+		TimeoutIoError::TimedOut
 	)
 }
