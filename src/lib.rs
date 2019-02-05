@@ -31,6 +31,7 @@ pub use crate::{
 	resolver::{ DnsResolvable, IpParseable }
 };
 use std::{
+	error::Error as StdError,
 	fmt::{ Display, Formatter, Result as FmtResult }, time::{ Duration, Instant },
 	io::{ Error as StdIoError, ErrorKind as IoErrorKind }
 };
@@ -55,6 +56,7 @@ impl TimeoutIoError {
 		}
 	}
 }
+impl StdError for TimeoutIoError {}
 impl Display for TimeoutIoError {
 	fn fmt(&self, f: &mut Formatter) -> FmtResult {
 		write!(f, "{:?}", self)
