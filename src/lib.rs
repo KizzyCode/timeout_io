@@ -94,13 +94,3 @@ impl InstantExt for Instant {
 			else { self - now }
 	}
 }
-/// Extends `std::time::Duration`
-pub trait DurationExt {
-	/// The duration in milliseconds
-	fn as_ms(&self) -> u64;
-}
-impl DurationExt for Duration {
-	fn as_ms(&self) -> u64 {
-		(self.as_secs() * 1000) + (self.subsec_nanos() as u64 / 1_000_000)
-	}
-}
