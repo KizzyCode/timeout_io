@@ -1,9 +1,18 @@
 use timeout_io::*;
-use std::{ time::Duration, thread, io::Write, sync::mpsc, net::{ TcpListener, TcpStream } };
+use std::{
+	time::Duration, thread, io::Write, sync::mpsc,
+	net::{ TcpListener, TcpStream }
+};
 
 
-fn write_delayed(mut stream: impl 'static + Write + Send, data: &'static [u8], delay: Duration) {
+fn write_delayed(mut stream: impl 'static + Write + Send + RawFd, data: &'static [u8],
+	delay: Duration)
+{
 	thread::spawn(move || {
+		// We need this for `write_all`
+		stream.set_blocking_mode(true).unwrap();
+		
+		// Write the data
 		thread::sleep(delay);
 		stream.write_all(data).unwrap();
 	});
@@ -23,7 +32,11 @@ fn socket_pair() -> (TcpStream, TcpStream) {
 	};
 	
 	// Create and connect stream
-	(TcpStream::connect(address).unwrap(), listener.recv().unwrap())
+	let (s0, s1) = (TcpStream::connect(address).unwrap(), listener.recv().unwrap());
+	s0.set_blocking_mode(false).unwrap();
+	s1.set_blocking_mode(false).unwrap();
+	
+	(s0, s1)
 }
 
 
@@ -35,25 +48,25 @@ fn test_read_oneshot_ok() {
 		Duration::from_secs(4)
 	);
 	
-	let mut buffer = [0u8; 4096];
-	let read = s0.read(&mut buffer, Duration::from_secs(7)).unwrap();
-	assert_eq!(&buffer[..read], b"Testolope");
+	let (mut buf, mut pos) = ([0u8; 4096], 0);
+	s0.try_read(&mut buf, &mut pos, Duration::from_secs(7)).unwrap();
+	assert_eq!(&buf[..pos], b"Testolope");
 }
 #[test]
 fn test_read_oneshot_err() {
 	let mut s0 = socket_pair().0;
-	let mut buffer = [0u8; 4096];
+	let (mut buf, mut pos) = ([0u8; 4096], 0);
 	assert_eq!(
-		s0.read(&mut buffer, Duration::from_secs(4)).unwrap_err(),
+		s0.try_read(&mut buf, &mut pos, Duration::from_secs(4)).unwrap_err(),
 		TimeoutIoError::UnexpectedEof
 	)
 }
 #[test]
 fn test_read_oneshot_timeout() {
 	let (mut s0, _s1) = socket_pair();
-	let mut buffer = [0u8; 4096];
+	let (mut buf, mut pos) = ([0u8; 4096], 0);
 	assert_eq!(
-		s0.read(&mut buffer, Duration::from_secs(4)).unwrap_err(),
+		s0.try_read(&mut buf, &mut pos, Duration::from_secs(4)).unwrap_err(),
 		TimeoutIoError::TimedOut
 	)
 }
@@ -71,18 +84,18 @@ fn test_read_exact_ok() {
 		Duration::from_secs(4)
 	);
 	
-	let mut buffer = [0u8; 9];
-	s0.read_exact(&mut buffer, Duration::from_secs(7)).unwrap();
-	assert_eq!(&buffer, b"Testolope");
+	let (mut buf, mut pos) = ([0u8; 9], 0);
+	s0.try_read_exact(&mut buf, &mut pos, Duration::from_secs(7)).unwrap();
+	assert_eq!(&buf, b"Testolope");
 }
 #[test]
 fn test_read_exact_err() {
 	let (mut s0, s1) = socket_pair();
 	write_delayed(s1, b"Test", Duration::from_secs(4));
 	
-	let mut buffer = [0u8; 9];
+	let (mut buf, mut pos) = ([0u8; 9], 0);
 	assert_eq!(
-		s0.read_exact(&mut buffer, Duration::from_secs(7)).unwrap_err(),
+		s0.try_read_exact(&mut buf, &mut pos, Duration::from_secs(7)).unwrap_err(),
 		TimeoutIoError::UnexpectedEof
 	)
 }
@@ -94,9 +107,9 @@ fn test_read_exact_timeout() {
 		Duration::from_secs(4)
 	);
 	
-	let mut buffer = [0u8; 9];
+	let (mut buf, mut pos) = ([0u8; 9], 0);
 	assert_eq!(
-		s0.read_exact(&mut buffer, Duration::from_secs(7)).unwrap_err(),
+		s0.try_read_exact(&mut buf, &mut pos, Duration::from_secs(7)).unwrap_err(),
 		TimeoutIoError::TimedOut
 	)
 }
@@ -118,12 +131,12 @@ fn test_read_until_ok() {
 		Duration::from_secs(5)
 	);
 	
-	let mut buffer = [0u8; 4096];
-	let read = s0.read_until(
-		&mut buffer, b"\n",
+	let (mut buf, mut pos) = ([0u8; 4096], 0);
+	assert!(s0.try_read_until(
+		&mut buf, &mut pos, b"\n",
 		Duration::from_secs(7)
-	).unwrap().unwrap();
-	assert_eq!(&buffer[..read], b"Testolope\n");
+	).unwrap());
+	assert_eq!(&buf[..pos], b"Testolope\n");
 }
 #[test]
 fn test_read_until_not_found() {
@@ -134,11 +147,11 @@ fn test_read_until_not_found() {
 	);
 	write_delayed(s1, b"!", Duration::from_secs(4));
 	
-	let mut buffer = [0u8; 10];
-	assert_eq!(
-		s0.read_until(&mut buffer, b"\n", Duration::from_secs(7)).unwrap(),
-		None
-	)
+	let (mut buf, mut pos) = ([0u8; 10], 0);
+	assert!(!s0.try_read_until(
+		&mut buf, &mut pos,
+		b"\n", Duration::from_secs(7))
+	.unwrap())
 }
 #[test]
 fn test_read_until_err() {
@@ -149,11 +162,11 @@ fn test_read_until_err() {
 	);
 	write_delayed(s1, b"!", Duration::from_secs(4));
 	
-	let mut buffer = [0u8; 4096];
-	assert_eq!(
-		s0.read_until(&mut buffer, b"\n", Duration::from_secs(7)).unwrap_err(),
-		TimeoutIoError::UnexpectedEof
-	)
+	let (mut buf, mut pos) = ([0u8; 4096], 0);
+	assert_eq!(s0.try_read_until(
+		&mut buf, &mut pos,
+		b"\n", Duration::from_secs(7)
+	).unwrap_err(), TimeoutIoError::UnexpectedEof)
 }
 #[test]
 fn test_read_until_timeout() {
@@ -167,9 +180,9 @@ fn test_read_until_timeout() {
 		Duration::from_secs(4)
 	);
 	
-	let mut buffer = [0u8; 4096];
-	assert_eq!(
-		s0.read_until(&mut buffer, b"\n", Duration::from_secs(7)).unwrap_err(),
-		TimeoutIoError::TimedOut
-	)
+	let (mut buf, mut pos) = ([0u8; 4096], 0);
+	assert_eq!(s0.try_read_until(
+		&mut buf, &mut pos,
+		b"\n", Duration::from_secs(7)
+	).unwrap_err(), TimeoutIoError::TimedOut)
 }

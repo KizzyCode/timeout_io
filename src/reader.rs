@@ -1,63 +1,68 @@
 use crate::{ TimeoutIoError, InstantExt, WaitForEvent, EventMask };
-use std::{ io::Read, time::{ Duration, Instant } };
+use std::{
+	io::Read,
+	time::{ Duration, Instant }
+};
 
 
 /// A trait for reading with timeouts
 pub trait Reader {
-	/// Executes _one_ `read`-operation to read up to `buffer.len()`-bytes and returns the amount
-	/// of bytes read
+	/// Executes _one_ `read`-operation to read _as much bytes as possible_ into `buf[*pos..]` and
+	/// adjusts `pos` accordingly
 	///
 	/// This is especially useful in packet-based contexts where `read`-operations are atomic
 	/// (like in UDP) or if you don't know the amount of bytes in advance
 	///
-	/// _Note: This function catches all interal timeouts/interrupts and returns only if there was
+	/// _Note: This function catches all internal timeouts/interrupts and returns only if there was
 	/// either one successful `read`-operation or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary.__
-	fn read(&mut self, buffer: &mut[u8], timeout: Duration) -> Result<usize, TimeoutIoError>;
+	/// __Warning: `self` must non-blocking or the function won't work as expected__
+	fn try_read(&mut self, buf: &mut[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>;
 	
-	/// Reads until `buffer` is filled completely
+	/// Reads until `buf[*pos..]` is filled completely and adjusts `pos` _on every successful
+	/// `read`-call_ (so that you can continue seamlessly on `TimedOut`-errors etc.)
 	///
 	/// This is especially useful in stream-based contexts where partial-`read`-calls are common
 	/// (like in TCP) and you want to read a well-known amount of bytes
 	///
-	/// _Note: This function catches all interal timeouts/interrupts and returns only if either
-	/// `buffer` has been filled completely or the `timeout` was hit or a non-recoverable error
+	/// _Note: This function catches all internal timeouts/interrupts and returns only if either
+	/// `buf` has been filled completely or the `timeout` was exceeded or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary.__
-	fn read_exact(&mut self, buffer: &mut[u8], timeout: Duration) -> Result<(), TimeoutIoError>;
+	/// __Warning: `self` must non-blocking or the function won't work as expected__
+	fn try_read_exact(&mut self, buf: &mut[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>;
 	
-	/// Reads until either `pattern` is matched or `buffer` is filled completely. Returns either
-	/// `Some(bytes_read)` if the pattern has been matched or `None` if `buffer` has been filled
-	/// completely without matching the pattern.
+	/// Reads until either `pat` is matched or `buf` is filled completely and adjusts `pos`
+	/// accordingly. Returns `true` if `pat` was matched and `false` otherwise.
+	///
+	/// _Note: While the reading is continued at `*pos`, `pat` is matched against the entire `buf`_
 	///
 	/// _Note: This function catches all interal timeouts/interrupts and returns only if either
 	/// `pattern` has been matched or `buffer` has been filled completely or the `timeout` was hit
 	/// or a non-recoverable error occurred._
 	///
-	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary.__
-	fn read_until(&mut self, buffer: &mut[u8], pattern: &[u8], timeout: Duration)
-		-> Result<Option<usize>, TimeoutIoError>;
+	/// __Warning: `self` must non-blocking or the function won't work as expected__
+	fn try_read_until(&mut self, buf: &mut[u8], pos: &mut usize, pat: &[u8], timeout: Duration)
+		-> Result<bool, TimeoutIoError>;
 }
 impl<T: Read + WaitForEvent> Reader for T {
-	fn read(&mut self, buffer: &mut[u8], timeout: Duration) -> Result<usize, TimeoutIoError> {
-		// Make the socket non-blocking
-		self.set_blocking_mode(false)?;
-		
-		// Immediately return if we should not read any bytes
-		if buffer.len() == 0 { return Ok(0) }
-		
-		// Wait for read-event and read data
-		self.wait_for_event(EventMask::new_r(), timeout)?;
+	fn try_read(&mut self, buf: &mut[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>
+	{
+		// Loop until we have *one* successful read
+		if *pos >= buf.len() { return Ok(()) }
 		loop {
-			match self.read(buffer) {
+			// Wait for read-event and read data
+			self.wait_for_event(EventMask::new_r(), timeout)?;
+			match self.read(&mut buf[*pos..]) {
 				Ok(0) => return Err(TimeoutIoError::UnexpectedEof),
-				Ok(bytes_read) => return Ok(bytes_read),
+				Ok(read) => {
+					*pos += read;
+					return Ok(())
+				},
 				Err(error) => {
 					let error = TimeoutIoError::from(error);
 					if !error.should_retry() { return Err(error) }
@@ -65,20 +70,19 @@ impl<T: Read + WaitForEvent> Reader for T {
 			}
 		}
 	}
-	
-	fn read_exact(&mut self, mut buffer: &mut[u8], timeout: Duration) -> Result<(), TimeoutIoError>
+	fn try_read_exact(&mut self, buf: &mut[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>
 	{
-		// Make the socket non-blocking
-		self.set_blocking_mode(false)?;
+		// Compute the deadline
+		let deadline = Instant::now() + timeout;
 		
-		// Compute timeout-point and loop until buffer is filled completely
-		let timeout_point = Instant::now() + timeout;
-		while !buffer.is_empty() {
+		// Loop until buffer is filled completely
+		while *pos < buf.len() {
 			// Wait for read-event and read data
-			self.wait_for_event(EventMask::new_r(), timeout_point.remaining())?;
-			match self.read(buffer) {
+			self.wait_for_event(EventMask::new_r(), deadline.remaining())?;
+			match self.read(&mut buf[*pos..]) {
 				Ok(0) => return Err(TimeoutIoError::UnexpectedEof),
-				Ok(bytes_read) => buffer = &mut buffer[bytes_read..],
+				Ok(read) => *pos += read,
 				Err(error) => {
 					let error = TimeoutIoError::from(error);
 					if !error.should_retry() { return Err(error) }
@@ -87,28 +91,23 @@ impl<T: Read + WaitForEvent> Reader for T {
 		}
 		Ok(())
 	}
-	
-	fn read_until(&mut self, buffer: &mut[u8], pattern: &[u8], timeout: Duration)
-		-> Result<Option<usize>, TimeoutIoError>
+	fn try_read_until(&mut self, buf: &mut[u8], pos: &mut usize, pat: &[u8], timeout: Duration)
+		-> Result<bool, TimeoutIoError>
 	{
-		// Compute timeout-point
-		let timeout_point = Instant::now() + timeout;
+		// Compute deadline
+		let deadline = Instant::now() + timeout;
 		
-		// Compute timeout-point and loop until `data` has been filled
-		let mut pos = 0;
-		while pos < buffer.len() {
+		// Loop until `data` has been filled
+		while *pos < buf.len() {
 			// Read next byte
-			Reader::read_exact(
-				self, &mut buffer[pos .. pos + 1],
-				timeout_point.remaining()
-			)?;
-			pos += 1;
+			let next = *pos + 1;
+			self.try_read_exact(&mut buf[..next], pos, deadline.remaining())?;
 			
 			// Check for pattern
-			if pos >= pattern.len() && &buffer[pos - pattern.len() .. pos] == pattern {
-				return Ok(Some(pos))
+			if *pos >= pat.len() && &buf[*pos - pat.len() .. *pos] == pat {
+				return Ok(true)
 			}
 		}
-		Ok(None)
+		Ok(false)
 	}
 }

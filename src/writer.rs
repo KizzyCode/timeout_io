@@ -1,11 +1,14 @@
 use crate::{ TimeoutIoError, InstantExt, WaitForEvent, EventMask };
-use std::{ io::Write, time::{ Duration, Instant } };
+use std::{
+	io::Write,
+	time::{ Duration, Instant }
+};
 
 
 /// A trait for writing with timeouts
 pub trait Writer {
-	/// Executes _one_ `write`-operation to write _as much bytes as possible_ from `data` and
-	/// returns the amount of bytes written
+	/// Executes _one_ `write`-operation to write _as much bytes as possible_ from `data[*pos..]`
+	/// and adjusts `pos` accordingly
 	///
 	/// This is especially useful in packet-based contexts where `write`-operations are atomic (like
 	/// in UDP)
@@ -14,11 +17,12 @@ pub trait Writer {
 	/// either one successful `write`-operation or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary.__
-	fn write(&mut self, data: &[u8], timeout: Duration) -> Result<usize, TimeoutIoError>;
+	/// __Warning: `self` must non-blocking or the function won't work as expected__
+	fn try_write(&mut self, data: &[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>;
 	
-	/// Writes all bytes in `data`
+	/// Reads until `buf[*pos..]` has been written completely and adjusts `pos` _on every successful
+	/// `write`-call_ (so that you can continue seamlessly on `TimedOut`-errors etc.)
 	///
 	/// This is especially useful in stream-based contexts where partial-`write`-calls are common
 	/// (like in TCP)
@@ -27,25 +31,27 @@ pub trait Writer {
 	/// `data` has been filled completely or the `timeout` was hit or a non-recoverable error
 	/// occurred._
 	///
-	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
-	/// state if necessary.__
-	fn write_exact(&mut self, data: &[u8], timeout: Duration) -> Result<(), TimeoutIoError>;
+	/// __Warning: `self` must non-blocking or the function won't work as expected__
+	fn try_write_exact(&mut self, data: &[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>;
 }
 impl<T: Write + WaitForEvent> Writer for T {
-	fn write(&mut self, data: &[u8], timeout: Duration) -> Result<usize, TimeoutIoError> {
-		// Make the socket non-blocking
-		self.set_blocking_mode(false)?;
-		
-		// Immediately return if we should not write any bytes
-		if data.is_empty() { return Ok(0) }
+	fn try_write(&mut self, data: &[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>
+	{
+		// Compute the deadline
+		let deadline = Instant::now() + timeout;
 		
 		// Wait for write-events and write data
-		let timeout_point = Instant::now() + timeout;
+		if *pos >= data.len() { return Ok(()) }
 		loop {
-			self.wait_for_event(EventMask::new_w(),timeout_point.remaining())?;
+			self.wait_for_event(EventMask::new_w(),deadline.remaining())?;
 			match self.write(data) {
 				Ok(0) => return Err(TimeoutIoError::UnexpectedEof),
-				Ok(bytes_written) => return Ok(bytes_written),
+				Ok(written) => {
+					*pos += written;
+					return Ok(())
+				},
 				Err(error) => {
 					let error = TimeoutIoError::from(error);
 					if !error.should_retry() { return Err(error) }
@@ -53,21 +59,21 @@ impl<T: Write + WaitForEvent> Writer for T {
 			}
 		}
 	}
-	
-	fn write_exact(&mut self, mut data: &[u8], timeout: Duration) -> Result<(), TimeoutIoError> {
-		// Make the socket non-blocking
-		self.set_blocking_mode(false)?;
+	fn try_write_exact(&mut self, data: &[u8], pos: &mut usize, timeout: Duration)
+		-> Result<(), TimeoutIoError>
+	{
+		// Compute the deadline
+		let deadline = Instant::now() + timeout;
 		
-		// Compute timeout-point and loop until data is empty
-		let timeout_point = Instant::now() + timeout;
-		while !data.is_empty() {
+		// Loop until `data` has been written
+		while *pos < data.len() {
 			// Wait for write-event
-			self.wait_for_event(EventMask::new_w(), timeout_point.remaining())?;
+			self.wait_for_event(EventMask::new_w(), deadline.remaining())?;
 			
 			// Write data
-			match self.write(data) {
+			match self.write(&data[*pos..]) {
 				Ok(0) => return Err(TimeoutIoError::UnexpectedEof),
-				Ok(bytes_written) => data = &data[bytes_written..],
+				Ok(written) => *pos += written,
 				Err(error) => {
 					let error = TimeoutIoError::from(error);
 					if !error.should_retry() { return Err(error) }

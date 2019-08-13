@@ -1,16 +1,21 @@
 use timeout_io::*;
 use std::{
 	thread, time::Duration, io::Read,
-	sync::mpsc::{ self, Receiver }, net::{ TcpListener, TcpStream, Shutdown }
+	net::{ TcpListener, TcpStream, Shutdown },
+	sync::mpsc::{ self, Receiver },
 };
 
 
-fn read_async(mut stream: impl 'static + Read + Send, to_read: usize) -> Receiver<Vec<u8>> {
+fn read_async(mut stream: impl 'static + Read + Send + RawFd, to_read: usize) -> Receiver<Vec<u8>> {
 	let (sender, receiver) = mpsc::channel();
 	thread::spawn(move || {
-		let mut buffer = vec![0u8; to_read];
-		stream.read_exact(&mut buffer).unwrap();
-		sender.send(buffer).unwrap();
+		// We need this for `read_exact`
+		stream.set_blocking_mode(true).unwrap();
+		
+		// Block until we can fill `buf` completely
+		let mut buf = vec![0u8; to_read];
+		stream.read_exact(&mut buf).unwrap();
+		sender.send(buf).unwrap();
 	});
 	receiver
 }
@@ -29,7 +34,11 @@ fn socket_pair() -> (TcpStream, TcpStream) {
 	};
 	
 	// Create and connect stream
-	(TcpStream::connect(address).unwrap(), listener.recv().unwrap())
+	let (s0, s1) = (TcpStream::connect(address).unwrap(), listener.recv().unwrap());
+	s0.set_blocking_mode(false).unwrap();
+	s1.set_blocking_mode(false).unwrap();
+	
+	(s0, s1)
 }
 
 fn rand(len: usize) -> Vec<u8> {
@@ -50,8 +59,8 @@ fn test_write_oneshot_ok() {
 	let (mut s0, s1) = socket_pair();
 	let fut = read_async(s1, 9);
 	
-	let data = rand(9);
-	s0.write(&mut data.clone(), Duration::from_secs(1)).unwrap();
+	let (data, mut pos) = (rand(9), 0);
+	s0.try_write(&mut data.clone(), &mut pos, Duration::from_secs(1)).unwrap();
 	assert_eq!(fut.recv().unwrap(), data);
 }
 #[test] #[ignore]
@@ -59,13 +68,13 @@ fn test_write_oneshot_err_broken_pipe() {
 	let mut s0 = socket_pair().0;
 	
 	// Write some data to start the connection timeout
-	s0.write(b"Testolope", Duration::from_secs(1)).unwrap();
+	s0.try_write(b"Testolope", &mut 0, Duration::from_secs(1)).unwrap();
 	
 	// Sleep until we can be sure that the timeout has been reached
 	thread::sleep(Duration::from_secs(90));
-	let mut data = rand(16 * 1024 * 1024);
+	let (mut data, mut pos) = (rand(16 * 1024 * 1024), 0);
 	assert_eq!(
-		s0.write(&mut data, Duration::from_secs(1)).unwrap_err(),
+		s0.try_write(&mut data, &mut pos, Duration::from_secs(1)).unwrap_err(),
 		TimeoutIoError::ConnectionLost
 	)
 }
@@ -74,8 +83,8 @@ fn test_write_oneshot_err() {
 	let (mut s0, _s1) = socket_pair();
 	s0.shutdown(Shutdown::Both).unwrap();
 	
-	let mut data = rand(16 * 1024 * 1024);
-	let err = s0.write(&mut data, Duration::from_secs(1)).unwrap_err();
+	let (mut data, mut pos) = (rand(16 * 1024 * 1024), 0);
+	let err = s0.try_write(&mut data, &mut pos, Duration::from_secs(1)).unwrap_err();
 	
 	#[cfg(unix)]
 	assert_eq!(err, TimeoutIoError::ConnectionLost);
@@ -93,17 +102,17 @@ fn test_write_oneshot_timeout() {
 	
 	// Write until the connection buffer is apparently filled
 	loop {
-		let mut data = rand(64 * 1024 * 1024);
-		if let Err(e) = s0.write(&mut data, Duration::from_secs(1)) {
+		let (mut data, mut pos) = (rand(64 * 1024 * 1024), 0);
+		if let Err(e) = s0.try_write(&mut data, &mut pos, Duration::from_secs(1)) {
 			if e == TimeoutIoError::TimedOut { break }
 				else { panic!(e) }
 		}
 	}
 	
 	// Final test
-	let mut data = rand(64 * 1024 * 1024);
+	let (mut data, mut pos) = (rand(64 * 1024 * 1024), 0);
 	assert_eq!(
-		s0.write(&mut data, Duration::from_secs(1)).unwrap_err(),
+		s0.try_write(&mut data, &mut pos, Duration::from_secs(1)).unwrap_err(),
 		TimeoutIoError::TimedOut
 	)
 }
@@ -113,10 +122,13 @@ fn test_write_oneshot_timeout() {
 fn test_write_exact_ok() {
 	let (mut s0, s1) = socket_pair();
 	
-	let data = rand(64 * 1024 * 1024);
+	let (data, mut pos) = (rand(64 * 1024 * 1024), 0);
 	let fut = read_async(s1, data.len());
 	
-	s0.write_exact(&mut data.clone(), Duration::from_secs(4)).unwrap();
+	s0.try_write_exact(
+		&mut data.clone(), &mut pos,
+		Duration::from_secs(4)
+	).unwrap();
 	assert_eq!(fut.recv().unwrap(), data)
 }
 #[test]
@@ -124,9 +136,9 @@ fn test_write_exact_err() {
 	let (mut s0, _s1) = socket_pair();
 	s0.shutdown(Shutdown::Both).unwrap();
 	
-	let data = rand(64 * 1024 * 1024);
+	let (data, mut pos) = (rand(64 * 1024 * 1024), 0);
 	let err = s0
-		.write_exact(&mut data.clone(), Duration::from_secs(4))
+		.try_write_exact(&mut data.clone(), &mut pos, Duration::from_secs(4))
 		.unwrap_err();
 	
 	#[cfg(unix)]
@@ -142,9 +154,9 @@ fn test_write_exact_err() {
 fn test_write_exact_timeout() {
 	let (mut s0, _s1) = socket_pair();
 	
-	let data = rand(64 * 1024 * 1024);
-	assert_eq!(
-		s0.write_exact(&mut data.clone(), Duration::from_secs(1)).unwrap_err(),
-		TimeoutIoError::TimedOut
-	)
+	let (data, mut pos) = (rand(64 * 1024 * 1024), 0);
+	assert_eq!(s0.try_write_exact(
+		&mut data.clone(), &mut pos,
+		Duration::from_secs(1)
+	).unwrap_err(), TimeoutIoError::TimedOut)
 }
