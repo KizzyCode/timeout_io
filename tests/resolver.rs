@@ -6,11 +6,11 @@ use std::{
 
 #[test]
 fn test_dns_resolve_ok() {
-	"localhost:80".dns_resolve(Duration::from_secs(4)).unwrap();
+	"localhost:80".try_dns_resolve(Duration::from_secs(4)).unwrap();
 }
 #[test]
 fn test_dns_resolve_invalid() {
-	"domain.invalid:80".dns_resolve(Duration::from_secs(4)).unwrap_err();
+	"domain.invalid:80".try_dns_resolve(Duration::from_secs(4)).unwrap_err();
 }
 #[test] #[ignore]
 fn test_dns_resolve_timeout() {
@@ -20,7 +20,7 @@ fn test_dns_resolve_timeout() {
 		SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
 	);
 	assert_eq!(
-		domain.dns_resolve(Duration::from_secs(4)).unwrap_err(),
+		domain.try_dns_resolve(Duration::from_secs(4)).unwrap_err(),
 		TimeoutIoError::TimedOut
 	)
 }

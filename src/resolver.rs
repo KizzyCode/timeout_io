@@ -17,10 +17,10 @@ pub trait DnsResolvable {
 	/// __Warning: because `getaddrinfo` only provides a synchronous API, we have to resolve in a
 	/// background thread. This means the background thread may outlive this call until the OS'
 	/// `connect`-timeout is reached.__
-	fn dns_resolve(&self, timeout: Duration) -> Result<SocketAddr, TimeoutIoError>;
+	fn try_dns_resolve(&self, timeout: Duration) -> Result<SocketAddr, TimeoutIoError>;
 }
 impl<T: ToString> DnsResolvable for T {
-	fn dns_resolve(&self, timeout: Duration) -> Result<SocketAddr, TimeoutIoError> {
+	fn try_dns_resolve(&self, timeout: Duration) -> Result<SocketAddr, TimeoutIoError> {
 		// Create address and channels
 		let address = self.to_string();
 		let (sender, receiver) = mpsc::channel();

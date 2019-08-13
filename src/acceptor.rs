@@ -30,10 +30,10 @@ pub trait Acceptor<T> {
 	///
 	/// __Warning: This function makes `self` non-blocking. It's up to you to restore the previous
 	/// state if necessary.__
-	fn accept(&self, timeout: Duration) -> Result<T, TimeoutIoError>;
+	fn try_accept(&self, timeout: Duration) -> Result<T, TimeoutIoError>;
 }
 impl<U, T: StdAcceptor<U> + WaitForEvent> Acceptor<U> for T {
-	fn accept(&self, timeout: Duration) -> Result<U, TimeoutIoError> {
+	fn try_accept(&self, timeout: Duration) -> Result<U, TimeoutIoError> {
 		// Make the socket non-blocking
 		self.set_blocking_mode(false)?;
 		

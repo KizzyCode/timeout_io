@@ -15,13 +15,13 @@ fn test_accept_ok() {
 		TcpStream::connect(address).unwrap();
 	});
 	
-	Acceptor::accept(&listener, Duration::from_secs(7)).unwrap();
+	Acceptor::try_accept(&listener, Duration::from_secs(7)).unwrap();
 }
 #[test]
 fn test_accept_timeout() {
 	let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 	assert_eq!(
-		Acceptor::accept(&listener, Duration::from_secs(4)).unwrap_err(),
+		Acceptor::try_accept(&listener, Duration::from_secs(4)).unwrap_err(),
 		TimeoutIoError::TimedOut
 	)
 }
