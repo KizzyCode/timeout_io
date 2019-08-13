@@ -1,7 +1,11 @@
-[![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![docs.rs](https://docs.rs/timeout_io/badge.svg)](https://docs.rs/timeout_io)
+[![License BSD-2-Clause](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
+[![License MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![crates.io](https://img.shields.io/crates/v/timeout_io.svg)](https://crates.io/crates/timeout_io)
+[![Download numbers](https://img.shields.io/crates/d/timeout_io.svg)](https://crates.io/crates/timeout_io)
 [![Travis CI](https://travis-ci.org/KizzyCode/timeout_io.svg?branch=master)](https://travis-ci.org/KizzyCode/timeout_io)
 [![AppVeyor CI](https://ci.appveyor.com/api/projects/status/github/KizzyCode/timeout_io?svg=true)](https://ci.appveyor.com/project/KizzyCode/timeout-io)
+[![dependency status](https://deps.rs/crate/timeout_io/0.5.0/status.svg)](https://deps.rs/crate/timeout_io/0.5.0)
 
 # About
 This library provides a simple timeout-based API for IO-operations.

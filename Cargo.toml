@@ -11,9 +11,21 @@ readme = "README.md"
 build = "build.rs"
 edition = "2018"
 
+
 [badges]
 travis-ci = { repository = "KizzyCode/timeout_io" }
 appveyor = { repository = "KizzyCode/timeout_io" }
+maintenance = { status = "passively-maintained" }
+is-it-maintained-open-issues = { repository = "KizzyCode/timeout_io" }
+is-it-maintained-issue-resolution = { repository = "KizzyCode/timeout_io" }
+
 
 [build-dependencies]
 cc = "^1.0"
+
+
+[profile.release]
+overflow-checks = true
+
+[profile.bench]
+overflow-checks = true
