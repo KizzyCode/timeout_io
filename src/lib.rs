@@ -3,10 +3,10 @@
 //!
 //! It provides the following features:
 //!  - DNS-resolution (currently uses a background-thread)
-//!  - TCP-accept (uses libselect)
-//!  - TCP-read/read-until/write (uses libselect)
-//!  - StdIOE-read/read-write/write (uses libselect)
-//!  - UDP-receive/send (uses libselect)
+//!  - TCP-accept
+//!  - TCP-read/read-until/write
+//!  - StdIOE-read/read-until/write
+//!  - UDP-receive/send
 //!
 //! All functions are defined as traits, so that you can easily wrap your own IO-channels without
 //! breaking compatibility.
