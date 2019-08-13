@@ -1,5 +1,9 @@
 use timeout_io::*;
-use std::{ time::Duration, thread, net::{ TcpListener, TcpStream } };
+use std::{
+	time::Duration, thread,
+	net::{ TcpListener, TcpStream }
+};
+
 
 #[test]
 fn test_accept_ok() {

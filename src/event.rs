@@ -1,5 +1,5 @@
-use crate::{ TimeoutIoError, DurationExt };
-use std::{ self, time::Duration, io::Error as StdIoError };
+use crate::TimeoutIoError;
+use std::{ self, io, convert::TryInto, time::Duration };
 
 
 /// Interface to `libselect`
@@ -89,10 +89,10 @@ impl<'a, T: RawFd> SelectSet<'a, T> {
 		
 		// Call libselect
 		let result = unsafe{ libselect::wait_for_event(
-			timeout.as_ms(),
+			timeout.as_millis().try_into().expect("`timeout.as_millis()` > `u64`"),
 			fds.as_ptr(), self.events.as_mut_ptr() as *mut u8
 		) };
-		if result != 0 { Err(StdIoError::from_raw_os_error(result))? }
+		if result != 0 { Err(io::Error::from_raw_os_error(result))? }
 		
 		// Yield the handles where an event occurred
 		let yielded = self.handles.into_iter().zip(self.events)
@@ -113,7 +113,7 @@ macro_rules! select_set {
 
 /// This trait defines an API to wait for an event
 pub trait WaitForEvent {
-	/// Waits until `event` occurres or `timeout` is reached and returns the event that occurred
+	/// Waits until `event` occurs or `timeout` is exceeded and returns the event that occurred
 	fn wait_for_event(&self, event: EventMask, timeout: Duration)
 		-> Result<EventMask, TimeoutIoError>;
 	
@@ -142,7 +142,7 @@ impl<T: RawFd> WaitForEvent for T {
 		// Check the result
 		match result {
 			0 => Ok(()),
-			e => Err(StdIoError::from_raw_os_error(e).into())
+			e => Err(io::Error::from_raw_os_error(e).into())
 		}
 	}
 }

@@ -31,14 +31,21 @@ pub use crate::{
 	resolver::{ DnsResolvable, IpParseable }
 };
 use std::{
-	error::Error as StdError,
-	fmt::{ Display, Formatter, Result as FmtResult }, time::{ Duration, Instant },
-	io::{ Error as StdIoError, ErrorKind as IoErrorKind }
+	error::Error,
+	fmt::{ self, Display, Formatter },
+	time::{ Duration, Instant },
+	io::{
+		self,
+		ErrorKind::{
+			Interrupted, TimedOut, WouldBlock, UnexpectedEof,
+			BrokenPipe, ConnectionAborted, ConnectionReset
+		}
+	}
 };
 
 
-#[derive(Debug, Clone, Eq, PartialEq)]
 /// An IO-error-wrapper
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TimeoutIoError {
 	InterruptedSyscall,
 	TimedOut,
@@ -56,20 +63,19 @@ impl TimeoutIoError {
 		}
 	}
 }
-impl StdError for TimeoutIoError {}
 impl Display for TimeoutIoError {
-	fn fmt(&self, f: &mut Formatter) -> FmtResult {
+	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
 		write!(f, "{:?}", self)
 	}
 }
-impl From<StdIoError> for TimeoutIoError {
-	fn from(error: StdIoError) -> Self {
+impl Error for TimeoutIoError {}
+impl From<io::Error> for TimeoutIoError {
+	fn from(error: io::Error) -> Self {
 		match error.kind() {
-			IoErrorKind::Interrupted => TimeoutIoError::InterruptedSyscall,
-			IoErrorKind::TimedOut | IoErrorKind::WouldBlock => TimeoutIoError::TimedOut,
-			IoErrorKind::UnexpectedEof => TimeoutIoError::UnexpectedEof,
-			IoErrorKind::BrokenPipe | IoErrorKind::ConnectionAborted | IoErrorKind::ConnectionReset
-				=> TimeoutIoError::ConnectionLost,
+			Interrupted => TimeoutIoError::InterruptedSyscall,
+			TimedOut | WouldBlock => TimeoutIoError::TimedOut,
+			UnexpectedEof => TimeoutIoError::UnexpectedEof,
+			BrokenPipe | ConnectionAborted | ConnectionReset => TimeoutIoError::ConnectionLost,
 			_ => TimeoutIoError::Other{ desc: format!("{:#?}", error) }
 		}
 	}

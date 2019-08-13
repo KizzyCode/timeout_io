@@ -17,7 +17,7 @@ fn test_dns_resolve_timeout() {
 	// Generate a new domain to avoid the cache
 	let domain = format!(
 		"{}.invalid:80",
-		SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_ms()
+		SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
 	);
 	assert_eq!(
 		domain.dns_resolve(Duration::from_secs(4)).unwrap_err(),

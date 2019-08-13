@@ -1,31 +1,32 @@
 use super::{ TimeoutIoError, InstantExt };
 use std::{
-	thread, str::FromStr, sync::mpsc::{ self, RecvTimeoutError },
-	time::{ Duration, Instant }, net::{ SocketAddr, ToSocketAddrs }
+	thread, str::FromStr,
+	net::{ SocketAddr, ToSocketAddrs },
+	time::{ Duration, Instant },
+	sync::mpsc::{ self, RecvTimeoutError }
 };
 
 
 /// A trait for elements which contain a DNS-resolvable address
 pub trait DnsResolvable {
-	/// Tries to resolve a domain-name or IP-address until `timeout` is reached
+	/// Tries to resolve a domain-name or IP-address until `timeout` is exceeded
+	///
+	/// _Info: If you want to resolve an address like "localhost" or "crates.io" you __must__
+	/// include the port number like this: "localhost:80" or "crates.io:443"_
 	///
 	/// __Warning: because `getaddrinfo` only provides a synchronous API, we have to resolve in a
 	/// background thread. This means the background thread may outlive this call until the OS'
 	/// `connect`-timeout is reached.__
-	///
-	/// _Important: If you want to resolve an address like "localhost" or "crates.io" you __must__
-	/// include the port number like this: "localhost:80" or "crates.io:443"_
 	fn dns_resolve(&self, timeout: Duration) -> Result<SocketAddr, TimeoutIoError>;
 }
 impl<T: ToString> DnsResolvable for T {
 	fn dns_resolve(&self, timeout: Duration) -> Result<SocketAddr, TimeoutIoError> {
-		enum Msg{ Ping, Result(Result<SocketAddr, TimeoutIoError>) }
-		
 		// Create address and channels
 		let address = self.to_string();
 		let (sender, receiver) = mpsc::channel();
 		
 		// Run resolver task
+		enum Msg{ Ping, Result(Result<SocketAddr, TimeoutIoError>) }
 		thread::spawn(move || {
 			let result = loop {
 				// Check for timeout
@@ -46,11 +47,10 @@ impl<T: ToString> DnsResolvable for T {
 			let _ = sender.send(Msg::Result(result));
 		});
 		
-		
 		// Wait for result
-		let timeout_point = Instant::now() + timeout;
+		let deadline = Instant::now() + timeout;
 		'receive_loop: loop {
-			match receiver.recv_timeout(timeout_point.remaining()) {
+			match receiver.recv_timeout(deadline.remaining()) {
 				Ok(Msg::Ping) => continue 'receive_loop,
 				Ok(Msg::Result(result)) => return result,
 				Err(RecvTimeoutError::Timeout) => return Err(TimeoutIoError::TimedOut),
